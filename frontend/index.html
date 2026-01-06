@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" class="dark">
+<!-- <html lang="en"> -->
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vite-app</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/three/three.module.js",
+        "three/addons/": "/three/addons/",
+        "3d-viewer": "/3d-viewer.js",
+        "glyph-full": "/glyph-full.js"
+      }
+    }
+  </script>
+  <script type="module" src="/ecad-viewer.js"></script>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

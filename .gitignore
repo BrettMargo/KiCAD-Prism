@@ -1,0 +1,24 @@
+# Common
+.DS_Store
+.vscode/
+
+# Backend
+**/__pycache__/
+backend/**/*.pyc
+backend/.env
+backend/venv/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Project Data
+# (The project database is currently outside the repo, but just in case)
+project-database/

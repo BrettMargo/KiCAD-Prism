@@ -1,0 +1,212 @@
+import { useEffect, useState } from "react";
+import { Download, File, FileText, Folder, ChevronRight, ChevronDown, Eye, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import "github-markdown-css/github-markdown-dark.css";
+import { FileItem, TreeNode, formatBytes, buildFileTree } from "@/lib/file-utils";
+
+interface DocumentationBrowserProps {
+    projectId: string;
+    commit?: string | null;
+}
+
+function TreeNodeComponent({
+    node,
+    projectId,
+    onView,
+    onDownload,
+    level = 0
+}: {
+    node: TreeNode;
+    projectId: string;
+    onView: (path: string, name: string) => void;
+    onDownload: (path: string) => void;
+    level?: number;
+}) {
+    const [expanded, setExpanded] = useState(false);
+    const hasChildren = node.children.length > 0;
+    const isMarkdown = node.type === 'md';
+
+    return (
+        <div>
+            <div
+                className="flex items-center gap-2 p-2 rounded-md hover:bg-muted/50 transition-colors"
+                style={{ paddingLeft: `${level * 1.5 + 0.5}rem` }}
+            >
+                {node.isDir && hasChildren && (
+                    <button
+                        onClick={() => setExpanded(!expanded)}
+                        className="p-0 hover:bg-transparent"
+                    >
+                        {expanded ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                    </button>
+                )}
+                {node.isDir && !hasChildren && <div className="w-4" />}
+
+                {node.isDir ? (
+                    <Folder className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                ) : isMarkdown ? (
+                    <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                ) : (
+                    <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                )}
+
+                <div className="flex-1 min-w-0 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{node.name}</p>
+                        {!node.isDir && (
+                            <p className="text-xs text-muted-foreground">
+                                {formatBytes(node.size)}
+                            </p>
+                        )}
+                    </div>
+
+                    {!node.isDir && (
+                        <div className="flex gap-1 flex-shrink-0">
+                            {isMarkdown && (
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => onView(node.path, node.name)}
+                                    title="View"
+                                >
+                                    <Eye className="h-4 w-4" />
+                                </Button>
+                            )}
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onDownload(node.path)}
+                                title="Download"
+                            >
+                                <Download className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {node.isDir && expanded && hasChildren && (
+                <div>
+                    {node.children.map((child) => (
+                        <TreeNodeComponent
+                            key={child.path}
+                            node={child}
+                            projectId={projectId}
+                            onView={onView}
+                            onDownload={onDownload}
+                            level={level + 1}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export function DocumentationBrowser({ projectId, commit }: DocumentationBrowserProps) {
+    const [files, setFiles] = useState<FileItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [viewingDoc, setViewingDoc] = useState<{ path: string; name: string; content: string } | null>(null);
+
+    useEffect(() => {
+        const fetchFiles = async () => {
+            try {
+                const response = await fetch(`/api/projects/${projectId}/docs`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setFiles(data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch docs", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchFiles();
+    }, [projectId]);
+
+    const handleView = async (path: string, name: string) => {
+        try {
+            const url = commit
+                ? `/api/projects/${projectId}/docs/content?path=${encodeURIComponent(path)}&commit=${commit}`
+                : `/api/projects/${projectId}/docs/content?path=${encodeURIComponent(path)}`;
+            const response = await fetch(url);
+            if (response.ok) {
+                const data = await response.json();
+                setViewingDoc({ path, name, content: data.content });
+            }
+        } catch (err) {
+            console.error("Failed to fetch doc content", err);
+        }
+    };
+
+    const handleDownload = (path: string) => {
+        const url = `/api/projects/${projectId}/asset/docs/${path}`;
+        window.open(url, '_blank');
+    };
+
+    const tree = buildFileTree(files);
+
+    if (loading) {
+        return <Skeleton className="h-64 w-full" />;
+    }
+
+    if (viewingDoc) {
+        return (
+            <div className="space-y-4">
+                <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b pb-4 -mx-6 px-6 -mt-6 pt-6 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">{viewingDoc.name}</h3>
+                    <Button variant="outline" size="sm" onClick={() => setViewingDoc(null)}>
+                        <X className="h-4 w-4 mr-2" />
+                        Close
+                    </Button>
+                </div>
+                <div className="markdown-body" style={{ background: 'transparent' }}>
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                            img: ({ src, alt }) => {
+                                const imgSrc = src?.startsWith('http')
+                                    ? src
+                                    : `/api/projects/${projectId}/asset/docs/${src}`;
+                                return <img src={imgSrc} alt={alt || ''} />;
+                            }
+                        }}
+                    >
+                        {viewingDoc.content}
+                    </ReactMarkdown>
+                </div>
+            </div>
+        );
+    }
+
+    if (files.length === 0) {
+        return <p className="text-sm text-muted-foreground text-center py-8">No documentation found</p>;
+    }
+
+    return (
+        <div className="border rounded-lg p-4 max-h-[600px] overflow-y-auto">
+            <div className="space-y-1">
+                {tree.map((node) => (
+                    <TreeNodeComponent
+                        key={node.path}
+                        node={node}
+                        projectId={projectId}
+                        onView={handleView}
+                        onDownload={handleDownload}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}

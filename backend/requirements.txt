@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+gitpython
+pydantic
+google-auth
+requests
