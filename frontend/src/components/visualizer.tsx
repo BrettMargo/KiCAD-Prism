@@ -187,18 +187,19 @@ export function Visualizer({ projectId }: VisualizerProps) {
         };
 
         const handleTabActivate = (e: CustomEvent) => {
-            // detail.current is "pcb" or "sch" (TabKind enum values)
+            // detail.current is "PCB" or "SCH" (TabKind enum values are uppercase)
             const kind = e.detail.current;
-            if (kind === "pcb") setActiveContext("PCB");
-            if (kind === "sch") setActiveContext("SCH");
-            console.log("Visualizer: Tab activated:", kind);
+
+            if (kind === "PCB") setActiveContext("PCB");
+            else if (kind === "SCH") setActiveContext("SCH");
+
+            // Note: activeContext will update on next render
         };
 
         const handleSheetLoad = (e: CustomEvent) => {
             // detail is the filename/path
             if (typeof e.detail === 'string') {
                 setActivePage(e.detail);
-                console.log("Visualizer: Sheet loaded:", e.detail);
             }
         };
 
@@ -339,17 +340,13 @@ export function Visualizer({ projectId }: VisualizerProps) {
     // Filter comments for overlay
     const overlayComments = comments.filter(c => {
         // Must match active context (PCB or SCH)
-        if (c.context !== activeContext) return false;
+        const contextMatch = c.context === activeContext;
+        if (!contextMatch) return false;
 
         // If SCH, must match active page
         if (activeContext === "SCH") {
-            // New comments have valid page.
-            if (c.location.page) return c.location.page === activePage;
-
-            // Legacy/fallback: if activePage is root, show comments with no page?
-            // User cleared comments so strictly speaking only new comments exist.
-            // But if page is missing, maybe default to root?
-            return activePage === "root.kicad_sch";
+            const pageMatch = c.location.page ? (c.location.page === activePage) : (activePage === "root.kicad_sch");
+            return pageMatch;
         }
 
         return true;
@@ -391,13 +388,14 @@ export function Visualizer({ projectId }: VisualizerProps) {
                 {activeTab === "ecad" && (
                     <div className="flex gap-2">
                         <Button
-                            variant={commentMode ? "secondary" : "ghost"}
+                            variant={commentMode ? "default" : "ghost"}
+                            className={commentMode ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
                             size="sm"
                             onClick={toggleCommentMode}
-                            title="Add Comment"
+                            title={commentMode ? "Exit Commenting Mode" : "Add Comment"}
                         >
                             <MessageSquarePlus className="w-4 h-4 mr-2" />
-                            Add Comment
+                            {commentMode ? "Commenting Mode" : "Add Comment"}
                         </Button>
                         <Button
                             variant={showCommentPanel ? "secondary" : "ghost"}
