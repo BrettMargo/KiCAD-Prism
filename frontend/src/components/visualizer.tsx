@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import * as React from "react";
-import { AlertCircle, Cpu, Box, FileText } from "lucide-react";
+import { AlertCircle, Cpu, Box, FileText, MessageSquarePlus, MessageSquareOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Model3DViewer } from "./model-3d-viewer";
+import { CommentOverlay } from "./comment-overlay";
+import { CommentForm } from "./comment-form";
+import type { Comment, CommentContext, CommentLocation } from "@/types/comments";
 
 // Wrapper to inject content via property instead of attribute to avoid size limits/parsing
 const EcadBlobWrapper = ({ filename, content }: { filename: string, content: string }) => {
@@ -41,6 +44,28 @@ export function Visualizer({ projectId }: VisualizerProps) {
     const [ibomUrl, setIbomUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Record<string, string>>({});
+
+    // Comment mode state
+    const [commentMode, setCommentMode] = useState(false);
+    const [comments, setComments] = useState<Comment[]>([]);
+    const [showCommentForm, setShowCommentForm] = useState(false);
+    const [pendingLocation, setPendingLocation] = useState<CommentLocation | null>(null);
+    const [pendingContext, setPendingContext] = useState<CommentContext>("PCB");
+    const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+    const viewerRef = React.useRef<HTMLElement>(null);
+
+    // Fetch comments for the project
+    const fetchComments = useCallback(async () => {
+        try {
+            const response = await fetch(`/api/projects/${projectId}/comments`);
+            if (response.ok) {
+                const data = await response.json();
+                setComments(data.comments || []);
+            }
+        } catch (err) {
+            console.warn("Failed to load comments", err);
+        }
+    }, [projectId]);
 
     useEffect(() => {
         const fetchFileContent = async () => {
@@ -132,10 +157,93 @@ export function Visualizer({ projectId }: VisualizerProps) {
             }
 
             setLoading(false);
+
+            // Fetch comments after file content
+            fetchComments();
         };
 
         fetchFileContent();
-    }, [projectId]);
+    }, [projectId, fetchComments]);
+
+    // Handle comment click event from ecad-viewer
+    useEffect(() => {
+        const viewer = viewerRef.current;
+        if (!viewer) return;
+
+        const handleCommentClick = (e: CustomEvent) => {
+            const detail = e.detail;
+            console.log("Comment click received:", detail);
+
+            setPendingLocation({
+                x: detail.worldX,
+                y: detail.worldY,
+                layer: detail.layer || "F.Cu",
+            });
+            setPendingContext(detail.context);
+            setShowCommentForm(true);
+        };
+
+        viewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
+
+        return () => {
+            viewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
+        };
+    }, []);
+
+    // Toggle comment mode on the viewer
+    const toggleCommentMode = () => {
+        const newMode = !commentMode;
+        setCommentMode(newMode);
+
+        const viewer = viewerRef.current as any;
+        if (viewer?.setCommentMode) {
+            viewer.setCommentMode(newMode);
+        } else if (viewer) {
+            // Fallback: set attribute directly
+            if (newMode) {
+                viewer.setAttribute("comment-mode", "true");
+            } else {
+                viewer.removeAttribute("comment-mode");
+            }
+        }
+    };
+
+    // Submit new comment
+    const handleSubmitComment = async (content: string) => {
+        if (!pendingLocation) return;
+
+        setIsSubmittingComment(true);
+        try {
+            const response = await fetch(`/api/projects/${projectId}/comments`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    context: pendingContext,
+                    location: pendingLocation,
+                    content: content,
+                }),
+            });
+
+            if (response.ok) {
+                const newComment = await response.json();
+                setComments(prev => [...prev, newComment]);
+                setShowCommentForm(false);
+                setPendingLocation(null);
+            } else {
+                console.error("Failed to create comment:", await response.text());
+            }
+        } catch (err) {
+            console.error("Error creating comment:", err);
+        } finally {
+            setIsSubmittingComment(false);
+        }
+    };
+
+    // Handle pin click
+    const handlePinClick = (comment: Comment) => {
+        console.log("Comment pin clicked:", comment);
+        // TODO: Show comment detail panel or popup
+    };
 
     const tabs: { id: VisualizerTab; label: string; icon: any }[] = [
         { id: "ecad", label: "Schematic & PCB", icon: Cpu },
@@ -165,35 +273,70 @@ export function Visualizer({ projectId }: VisualizerProps) {
                         </Button>
                     );
                 })}
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Comment Mode Toggle - only show on ECAD tab */}
+                {activeTab === "ecad" && (
+                    <Button
+                        variant={commentMode ? "default" : "outline"}
+                        onClick={toggleCommentMode}
+                        className={commentMode ? "bg-blue-500 hover:bg-blue-600" : ""}
+                    >
+                        {commentMode ? (
+                            <>
+                                <MessageSquareOff className="h-4 w-4 mr-2" />
+                                Exit Comment Mode
+                            </>
+                        ) : (
+                            <>
+                                <MessageSquarePlus className="h-4 w-4 mr-2" />
+                                Add Comment
+                            </>
+                        )}
+                    </Button>
+                )}
             </div>
 
             {/* Viewer Area */}
-            <div className="flex-1 min-h-0 bg-background">
+            <div className="flex-1 min-h-0 bg-background relative">
                 {/* ECAD Tab */}
-                <div className={activeTab === "ecad" ? "h-full" : "hidden"}>
+                <div className={activeTab === "ecad" ? "h-full relative" : "hidden"}>
                     {(schematicContent || pcbContent) ? (
-                        <ecad-viewer
-                            key={`${projectId}-ecad`}
-                            style={{
-                                width: '100%',
-                                height: '100%'
-                            }}
-                        >
-                            {/* Inject Root Schematic */}
-                            {schematicContent && (
-                                <EcadBlobWrapper filename="root.kicad_sch" content={schematicContent} />
-                            )}
+                        <>
+                            <ecad-viewer
+                                ref={viewerRef}
+                                key={`${projectId}-ecad`}
+                                style={{
+                                    width: '100%',
+                                    height: '100%'
+                                }}
+                            >
+                                {/* Inject Root Schematic */}
+                                {schematicContent && (
+                                    <EcadBlobWrapper filename="root.kicad_sch" content={schematicContent} />
+                                )}
 
-                            {/* Inject Subsheets */}
-                            {subsheets.map((sheet) => (
-                                <EcadBlobWrapper key={sheet.filename} filename={sheet.filename} content={sheet.content} />
-                            ))}
+                                {/* Inject Subsheets */}
+                                {subsheets.map((sheet) => (
+                                    <EcadBlobWrapper key={sheet.filename} filename={sheet.filename} content={sheet.content} />
+                                ))}
 
-                            {/* Inject PCB */}
-                            {pcbContent && (
-                                <EcadBlobWrapper filename="board.kicad_pcb" content={pcbContent} />
-                            )}
-                        </ecad-viewer>
+                                {/* Inject PCB */}
+                                {pcbContent && (
+                                    <EcadBlobWrapper filename="board.kicad_pcb" content={pcbContent} />
+                                )}
+                            </ecad-viewer>
+
+                            {/* Comment Overlay */}
+                            <CommentOverlay
+                                comments={comments}
+                                viewerRef={viewerRef}
+                                onPinClick={handlePinClick}
+                                showResolved={true}
+                            />
+                        </>
                     ) : (
                         <div className="flex flex-col items-center justify-center h-96 text-muted-foreground">
                             <AlertCircle className="h-12 w-12 mb-4" />
@@ -240,6 +383,19 @@ export function Visualizer({ projectId }: VisualizerProps) {
                     )}
                 </div>
             </div>
+
+            {/* Comment Form Modal */}
+            <CommentForm
+                isOpen={showCommentForm}
+                onClose={() => {
+                    setShowCommentForm(false);
+                    setPendingLocation(null);
+                }}
+                onSubmit={handleSubmitComment}
+                location={pendingLocation}
+                context={pendingContext}
+                isSubmitting={isSubmittingComment}
+            />
         </div>
     );
 }

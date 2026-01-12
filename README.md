@@ -73,7 +73,7 @@ Special thanks to the KiCAD team and the open-source hardware community.
 1. **Login and Access Control**: Currently the project just has a Dev Bypass. Users can choose to implement proper access control to their workspace or just use this platform as a public showcase of their projects.
 2. **Generic Workflows**: The current workflow system is hardcoded to use specific UUIDs for job execution. I plan to make it more generic and allow users to define their own jobset files and output IDs.
 3. **Collaboration**: The idea is to replicate the functionality of `commenting` that Altium Workspace provides on schematics and PCB layouts. I feel like this is a great value addition for team reviews. Current plan is to use [KiNotes](https://github.com/way2pramil/KiNotes) to implement this feature. Yet to figure out how applicable this would be. It's technically just markdown editing in the end :)
-4. Integrate better Git Diff features: Currently planning to integrate [Kiri](https://github.com/leoheck/kiri) to provide visual diff features inside the history viewer section. This will allow users to see the changes between different commits in a more intuitive way.
+4. **Integrate better Git Diff features**: Currently planning to integrate [Kiri](https://github.com/leoheck/kiri) to provide visual diff features inside the history viewer section. This will allow users to see the changes between different commits in a more intuitive way.
 
 ## Customization
 
