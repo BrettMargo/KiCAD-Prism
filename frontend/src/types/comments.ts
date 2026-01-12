@@ -58,6 +58,12 @@ export interface Comment {
     content: string;
     /** Replies to this comment */
     replies: CommentReply[];
+    /** Element designator (e.g., "U1") */
+    elementRef?: string;
+    /** Element type (e.g., "Footprint") */
+    elementType?: string;
+    /** Element ID (UUID) */
+    elementId?: string;
 }
 
 /**

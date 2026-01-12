@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import * as React from "react";
-import { AlertCircle, Cpu, Box, FileText, MessageSquarePlus, MessageSquareOff } from "lucide-react";
+import { AlertCircle, Cpu, Box, FileText, MessageSquarePlus, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Model3DViewer } from "./model-3d-viewer";
 import { CommentOverlay } from "./comment-overlay";
 import { CommentForm } from "./comment-form";
+import { CommentPanel } from "./comment-panel";
 import type { Comment, CommentContext, CommentLocation } from "@/types/comments";
 
 // Wrapper to inject content via property instead of attribute to avoid size limits/parsing
@@ -45,11 +46,12 @@ export function Visualizer({ projectId }: VisualizerProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Record<string, string>>({});
 
-    // Comment mode state
-    const [commentMode, setCommentMode] = useState(false);
+    // Comment state
     const [comments, setComments] = useState<Comment[]>([]);
+    const [commentMode, setCommentMode] = useState(false);
     const [showCommentForm, setShowCommentForm] = useState(false);
-    const [pendingLocation, setPendingLocation] = useState<CommentLocation | null>(null);
+    const [showCommentPanel, setShowCommentPanel] = useState(false);
+    const [pendingLocation, setPendingLocation] = useState<{ x: number, y: number, layer: string } | null>(null);
     const [pendingContext, setPendingContext] = useState<CommentContext>("PCB");
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
     const viewerRef = React.useRef<HTMLElement>(null);
@@ -168,11 +170,16 @@ export function Visualizer({ projectId }: VisualizerProps) {
     // Handle comment click event from ecad-viewer
     useEffect(() => {
         const viewer = viewerRef.current;
-        if (!viewer) return;
+        if (!viewer) {
+            console.log("CommentClick: viewerRef not yet available");
+            return;
+        }
+
+        console.log("CommentClick: Attaching event listener to viewer", viewer);
 
         const handleCommentClick = (e: CustomEvent) => {
             const detail = e.detail;
-            console.log("Comment click received:", detail);
+            console.log("Comment click received in React:", detail);
 
             setPendingLocation({
                 x: detail.worldX,
@@ -186,9 +193,10 @@ export function Visualizer({ projectId }: VisualizerProps) {
         viewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
 
         return () => {
+            console.log("CommentClick: Removing event listener");
             viewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
         };
-    }, []);
+    }, [loading, schematicContent, pcbContent]); // Re-run when content loads
 
     // Toggle comment mode on the viewer
     const toggleCommentMode = () => {
@@ -242,7 +250,45 @@ export function Visualizer({ projectId }: VisualizerProps) {
     // Handle pin click
     const handlePinClick = (comment: Comment) => {
         console.log("Comment pin clicked:", comment);
-        // TODO: Show comment detail panel or popup
+        setShowCommentPanel(true);
+        // TODO: Zoom to comment
+    };
+
+    // Handle resolve/reopen comment
+    const handleResolveComment = async (commentId: string, resolved: boolean) => {
+        try {
+            const response = await fetch(`/api/projects/${projectId}/comments/${commentId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: resolved ? "RESOLVED" : "OPEN" }),
+            });
+
+            if (response.ok) {
+                const updatedComment = await response.json();
+                setComments(prev => prev.map(c => c.id === commentId ? updatedComment : c));
+            }
+        } catch (err) {
+            console.error("Error updating comment status:", err);
+        }
+    };
+
+    // Handle reply to comment
+    const handleReplyComment = async (commentId: string, content: string) => {
+        try {
+            const response = await fetch(`/api/projects/${projectId}/comments/${commentId}/replies`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                // data contains { comment: updatedComment, reply: newReply }
+                setComments(prev => prev.map(c => c.id === commentId ? data.comment : c));
+            }
+        } catch (err) {
+            console.error("Error replying to comment:", err);
+        }
     };
 
     const tabs: { id: VisualizerTab; label: string; icon: any }[] = [
@@ -279,23 +325,26 @@ export function Visualizer({ projectId }: VisualizerProps) {
 
                 {/* Comment Mode Toggle - only show on ECAD tab */}
                 {activeTab === "ecad" && (
-                    <Button
-                        variant={commentMode ? "default" : "outline"}
-                        onClick={toggleCommentMode}
-                        className={commentMode ? "bg-blue-500 hover:bg-blue-600" : ""}
-                    >
-                        {commentMode ? (
-                            <>
-                                <MessageSquareOff className="h-4 w-4 mr-2" />
-                                Exit Comment Mode
-                            </>
-                        ) : (
-                            <>
-                                <MessageSquarePlus className="h-4 w-4 mr-2" />
-                                Add Comment
-                            </>
-                        )}
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button
+                            variant={commentMode ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={toggleCommentMode}
+                            title="Add Comment"
+                        >
+                            <MessageSquarePlus className="w-4 h-4 mr-2" />
+                            Add Comment
+                        </Button>
+                        <Button
+                            variant={showCommentPanel ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => setShowCommentPanel(!showCommentPanel)}
+                            title="View Comments"
+                        >
+                            <MessageSquare className="w-4 h-4 mr-2" />
+                            Comments
+                        </Button>
+                    </div>
                 )}
             </div>
 
@@ -383,6 +432,24 @@ export function Visualizer({ projectId }: VisualizerProps) {
                     )}
                 </div>
             </div>
+
+            {/* Comment Panel */}
+            {showCommentPanel && (
+                <div className="absolute top-[48px] bottom-0 right-0 z-40 bg-background border-l shadow-xl animate-in slide-in-from-right">
+                    <CommentPanel
+                        comments={comments}
+                        onClose={() => setShowCommentPanel(false)}
+                        onResolve={handleResolveComment}
+                        onReply={handleReplyComment}
+                        onCommentClick={(comment) => {
+                            const viewer = viewerRef.current as any;
+                            if (viewer?.zoomToLocation) {
+                                viewer.zoomToLocation(comment.location.x, comment.location.y);
+                            }
+                        }}
+                    />
+                </div>
+            )}
 
             {/* Comment Form Modal */}
             <CommentForm

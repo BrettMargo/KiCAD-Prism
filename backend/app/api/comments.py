@@ -65,12 +65,12 @@ class CommentsFile(BaseModel):
 # ============================================================
 
 def get_comments_path(project_path: str) -> str:
-    """Get path to .kicad-prism/comments.json"""
-    return os.path.join(project_path, ".kicad-prism", "comments.json")
+    """Get path to .comments/comments.json"""
+    return os.path.join(project_path, ".comments", "comments.json")
 
 def ensure_comments_dir(project_path: str) -> str:
-    """Ensure .kicad-prism directory exists"""
-    prism_dir = os.path.join(project_path, ".kicad-prism")
+    """Ensure .comments directory exists"""
+    prism_dir = os.path.join(project_path, ".comments")
     os.makedirs(prism_dir, exist_ok=True)
     return prism_dir
 

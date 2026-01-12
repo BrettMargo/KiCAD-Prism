@@ -101,7 +101,7 @@ export function CommentForm({
                         onChange={(e) => setContent(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Describe the issue or leave a note..."
-                        className="w-full h-32 p-3 border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                        className="w-full h-32 p-3 border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-ring text-foreground bg-background"
                         disabled={isSubmitting}
                     />
 
