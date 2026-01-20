@@ -78,9 +78,9 @@ function App() {
                     <div className="min-h-screen bg-background text-foreground">
                         <header className="border-b sticky top-0 bg-background/95 backdrop-blur z-10">
                             <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="h-6 w-6 bg-primary rounded-md"></div>
-                                    <span className="text-xl font-bold tracking-tight">KiCAD Prism</span>
+                                <div className="flex items-center gap-2 text-primary">
+                                    <img src="/logo.png" alt="KiCAD Prism Logo" className="h-6 w-6 object-contain" />
+                                    <span className="text-xl font-bold tracking-tight text-foreground">KiCAD Prism</span>
                                 </div>
 
                                 <div className="flex items-center gap-4">

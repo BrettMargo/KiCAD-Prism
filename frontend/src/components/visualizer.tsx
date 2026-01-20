@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as React from "react";
-import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare } from "lucide-react";
+import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Model3DViewer } from "./model-3d-viewer";
 import { CommentOverlay } from "./comment-overlay";
 import { CommentForm } from "./comment-form";
@@ -62,6 +65,10 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     const [pendingLocation, setPendingLocation] = useState<{ x: number, y: number, layer: string } | null>(null);
     const [pendingContext, setPendingContext] = useState<CommentContext>("PCB");
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+    const [isPushingComments, setIsPushingComments] = useState(false);
+    const [pushMessage, setPushMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+    const [showPushDialog, setShowPushDialog] = useState(false);
+    const [commitMessage, setCommitMessage] = useState("");
 
     // Initial Data Fetch
     useEffect(() => {
@@ -304,6 +311,39 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         }
     };
 
+    // Push Comments to Remote
+    const handlePushComments = async () => {
+        setIsPushingComments(true);
+        setPushMessage(null);
+
+        try {
+            const response = await fetch(`/api/projects/${projectId}/comments/push`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    author: user?.name || "anonymous",
+                    message: commitMessage || undefined
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setPushMessage({ type: "success", text: data.message || "Comments pushed successfully!" });
+                setShowPushDialog(false);
+                setCommitMessage("");
+            } else {
+                setPushMessage({ type: "error", text: data.detail || "Failed to push comments." });
+            }
+        } catch (err: any) {
+            setPushMessage({ type: "error", text: err.message || "Network error while pushing comments." });
+        } finally {
+            setIsPushingComments(false);
+            // Clear message after 5 seconds
+            setTimeout(() => setPushMessage(null), 5000);
+        }
+    };
+
     // Filtering comments for Overlay
     const overlayComments = comments.filter(c => {
         // Must match context
@@ -378,9 +418,71 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                                 {comments.length}
                             </span>
                         </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowPushDialog(true)}
+                            disabled={comments.length === 0}
+                            className="text-xs h-8 ml-1"
+                            title="Commit and push comments to remote"
+                        >
+                            <GitBranch className="w-3 h-3 mr-2" />
+                            Push Comments
+                        </Button>
                     </>
                 )}
             </div>
+
+            {/* Push Message Feedback */}
+            {pushMessage && (
+                <div className={`px-4 py-2 text-sm border-b ${pushMessage.type === "success"
+                    ? "bg-green-500/10 border-green-500/20 text-green-500"
+                    : "bg-red-500/10 border-red-500/20 text-red-500"
+                    }`}>
+                    {pushMessage.text}
+                    <button
+                        onClick={() => setPushMessage(null)}
+                        className="ml-2 text-xs underline"
+                    >
+                        Dismiss
+                    </button>
+                </div>
+            )}
+
+            {/* Push Comments Dialog */}
+            <Dialog open={showPushDialog} onOpenChange={setShowPushDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Push Comments</DialogTitle>
+                        <DialogDescription>
+                            Commit and push your design review comments to the remote repository.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="commit-message" className="text-right">
+                                Message
+                            </Label>
+                            <Input
+                                id="commit-message"
+                                value={commitMessage}
+                                onChange={(e) => setCommitMessage(e.target.value)}
+                                placeholder="Updated design review comments"
+                                className="col-span-3"
+                                disabled={isPushingComments}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowPushDialog(false)} disabled={isPushingComments}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handlePushComments} disabled={isPushingComments}>
+                            {isPushingComments ? "Pushing..." : "Push"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Content Area */}
             <div className="flex-1 relative overflow-hidden">

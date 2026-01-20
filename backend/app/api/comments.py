@@ -249,3 +249,91 @@ async def delete_comment(project_id: str, comment_id: str):
     write_comments_file(project.path, comments_file)
     
     return {"deleted": comment_id}
+
+
+# ============================================================
+# COMMIT & PUSH ENDPOINT
+# ============================================================
+
+class PushCommentsRequest(BaseModel):
+    author: Optional[str] = "anonymous"
+    message: Optional[str] = None
+
+@router.post("/{project_id}/comments/push")
+async def push_comments(project_id: str, request: PushCommentsRequest):
+    """
+    Commit and push comments.json to remote repository.
+    """
+    from git import Repo
+    from git.exc import GitCommandError
+    
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    comments_path = get_comments_path(project.path)
+    
+    # Check if comments file exists
+    if not os.path.exists(comments_path):
+        raise HTTPException(status_code=404, detail="No comments file to push")
+    
+    try:
+        repo = Repo(project.path)
+        
+        # Check if there are changes to commit
+        comments_rel_path = os.path.relpath(comments_path, project.path)
+        
+        # Stage the comments file
+        repo.index.add([comments_rel_path])
+        
+        # Check if there are staged changes
+        diff = repo.index.diff("HEAD")
+        if not diff and not repo.untracked_files:
+            # Check if specifically comments.json has changes
+            status = repo.git.status("--porcelain", comments_rel_path)
+            if not status:
+                return {
+                    "success": True,
+                    "message": "No changes to commit. Comments are already up to date."
+                }
+        
+        # Create commit message
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        author_name = request.author or "anonymous"
+        commit_message = request.message or f"Updated design review comments - {timestamp} by {author_name}"
+        
+        # Commit using git command directly (author as string)
+        repo.git.commit(
+            m=commit_message,
+            author="KiCAD Prism <prism@pixxel.co.in>"
+        )
+        
+        # Push
+        try:
+            origin = repo.remotes.origin
+            push_info = origin.push()
+            
+            # Check for push errors
+            for info in push_info:
+                if info.flags & info.ERROR:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Push failed: {info.summary}"
+                    )
+            
+            return {
+                "success": True,
+                "message": f"Successfully committed and pushed comments by {author_name}."
+            }
+            
+        except GitCommandError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Git push failed: {str(e)}. You may need to pull first or check your permissions."
+            )
+            
+    except GitCommandError as e:
+        raise HTTPException(status_code=500, detail=f"Git error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

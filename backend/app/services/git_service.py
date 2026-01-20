@@ -154,10 +154,9 @@ def file_exists_in_commit(repo_path: str, commit_hash: str, file_path: str) -> b
 
 def sync_with_remote(repo_path: str) -> Dict[str, Any]:
     """
-    Sync local repository with remote by performing a hard reset.
+    Sync local repository with remote by performing a git pull.
     
-    This fetches the latest changes from origin and performs a hard reset
-    to match the remote branch state exactly.
+    This fetches and merges the latest changes from the remote tracking branch.
     
     Returns:
         Dict with sync status information including:
@@ -176,47 +175,27 @@ def sync_with_remote(repo_path: str) -> Dict[str, Any]:
         # Get current HEAD before sync
         previous_commit = repo.head.commit.hexsha
         
-        # Determine the tracking branch
-        try:
-            tracking_branch = repo.active_branch.tracking_branch()
-            if tracking_branch is None:
-                # Default to origin/main or origin/master
-                remote_refs = [ref.name for ref in repo.remotes.origin.refs]
-                if 'origin/main' in remote_refs:
-                    remote_branch = 'origin/main'
-                elif 'origin/master' in remote_refs:
-                    remote_branch = 'origin/master'
-                else:
-                    # Use the first remote branch
-                    remote_branch = remote_refs[0] if remote_refs else 'origin/main'
-            else:
-                remote_branch = tracking_branch.name
-        except Exception:
-            remote_branch = 'origin/main'
-        
-        # Fetch latest changes from origin
+        # Perform git pull
         origin = repo.remotes.origin
-        fetch_info = origin.fetch()
-        
-        # Count commits behind
-        commits_behind = 0
-        try:
-            commits_behind = len(list(repo.iter_commits(f'HEAD..{remote_branch}')))
-        except Exception:
-            pass
-        
-        # Hard reset to remote branch
-        repo.git.reset('--hard', remote_branch)
+        pull_info = origin.pull()
         
         # Get new HEAD after sync
         current_commit = repo.head.commit.hexsha
+        
+        # Count how many commits were pulled
+        commits_pulled = 0
+        if previous_commit != current_commit:
+            try:
+                commits_pulled = len(list(repo.iter_commits(f'{previous_commit}..{current_commit}')))
+            except Exception:
+                commits_pulled = 1  # At least one if heads differ
         
         return {
             "success": True,
             "previous_commit": previous_commit[:7],
             "current_commit": current_commit[:7],
-            "commits_pulled": commits_behind,
-            "message": f"Successfully synced to {remote_branch}. Pulled {commits_behind} commit(s)."
+            "commits_pulled": commits_pulled,
+            "message": f"Successfully pulled {commits_pulled} commit(s) from remote."
         }
         
     except Exception as e:
