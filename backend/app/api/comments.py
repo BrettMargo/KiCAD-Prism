@@ -31,9 +31,11 @@ class CreateCommentRequest(BaseModel):
     context: str  # "PCB" or "SCH"
     location: CommentLocation
     content: str
+    author: Optional[str] = "anonymous"
 
 class CreateReplyRequest(BaseModel):
     content: str
+    author: Optional[str] = "anonymous"
 
 class UpdateCommentRequest(BaseModel):
     status: Optional[str] = None  # "OPEN" or "RESOLVED"
@@ -144,7 +146,7 @@ async def create_comment(project_id: str, request: CreateCommentRequest):
     # Create new comment
     new_comment = Comment(
         id=generate_comment_id(),
-        author=get_current_user(),
+        author=request.author or get_current_user(),
         timestamp=datetime.utcnow().isoformat() + "Z",
         status="OPEN",
         context=request.context,
@@ -210,7 +212,7 @@ async def add_reply(project_id: str, comment_id: str, request: CreateReplyReques
     
     # Create reply
     new_reply = CommentReply(
-        author=get_current_user(),
+        author=request.author or get_current_user(),
         timestamp=datetime.utcnow().isoformat() + "Z",
         content=request.content
     )

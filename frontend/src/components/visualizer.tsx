@@ -6,6 +6,7 @@ import { Model3DViewer } from "./model-3d-viewer";
 import { CommentOverlay } from "./comment-overlay";
 import { CommentForm } from "./comment-form";
 import { CommentPanel } from "./comment-panel";
+import type { User } from "@/types/auth";
 import type { Comment, CommentContext } from "@/types/comments";
 
 // Wrapper to inject content via property instead of attribute to avoid size limits/parsing
@@ -22,13 +23,16 @@ const EcadBlobWrapper = ({ filename, content }: { filename: string, content: str
     return <ecad-blob ref={ref} filename={filename} />;
 };
 
+
+
 interface VisualizerProps {
     projectId: string;
+    user: User | null;
 }
 
 type VisualizerTab = "ecad" | "3d" | "ibom";
 
-export function Visualizer({ projectId }: VisualizerProps) {
+export function Visualizer({ projectId, user }: VisualizerProps) {
     // We use a state for the viewer element to ensure the effect re-runs when it mounts
     const [viewerElement, setViewerElement] = useState<HTMLElement | null>(null);
     const viewerRef = useRef<HTMLElement | null>(null);
@@ -212,7 +216,8 @@ export function Visualizer({ projectId }: VisualizerProps) {
                 body: JSON.stringify({
                     context: pendingContext,
                     location,
-                    content
+                    content,
+                    author: user?.name || "anonymous"
                 })
             });
 
@@ -275,7 +280,10 @@ export function Visualizer({ projectId }: VisualizerProps) {
         const response = await fetch(`/api/projects/${projectId}/comments/${commentId}/replies`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content })
+            body: JSON.stringify({
+                content,
+                author: user?.name || "anonymous"
+            })
         });
         if (response.ok) {
             const data = await response.json();

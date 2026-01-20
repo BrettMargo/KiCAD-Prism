@@ -1,22 +1,13 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { User, AuthConfig } from './types/auth';
 import { LoginPage } from './components/login-page';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { Button } from '@/components/ui/button';
 import { Workspace } from './components/workspace';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 
-interface User {
-    name: string;
-    email: string;
-    picture?: string;
-}
 
-interface AuthConfig {
-    auth_enabled: boolean;
-    dev_mode: boolean;
-    google_client_id: string;
-}
 
 function App() {
     const [user, setUser] = useState<User | null>(null);
@@ -111,7 +102,7 @@ function App() {
                         </main>
                     </div>
                 } />
-                <Route path="/project/:projectId" element={<ProjectDetailPage />} />
+                <Route path="/project/:projectId" element={<ProjectDetailPage user={user} />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </BrowserRouter>

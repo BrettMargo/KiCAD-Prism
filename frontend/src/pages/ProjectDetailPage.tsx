@@ -11,6 +11,7 @@ import "github-markdown-css/github-markdown-dark.css";
 import { DocumentationBrowser } from "@/components/documentation-browser";
 import { HistoryViewer } from "@/components/history-viewer";
 import { Visualizer } from "@/components/visualizer";
+import { User } from "@/types/auth";
 
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -24,7 +25,9 @@ interface Project {
 
 type Section = "overview" | "history" | "visualizers" | "assets" | "documentation" | "workflows";
 
-export function ProjectDetailPage() {
+
+
+export function ProjectDetailPage({ user }: { user: User | null }) {
     const { projectId } = useParams<{ projectId: string }>();
     const navigate = useNavigate();
     const [project, setProject] = useState<Project | null>(null);
@@ -385,7 +388,7 @@ export function ProjectDetailPage() {
                         >
                             <h2 className="text-2xl font-bold mb-6">Visualizers</h2>
                             <div className="flex-1 min-h-0">
-                                {projectId && <Visualizer projectId={projectId} />}
+                                {projectId && <Visualizer projectId={projectId} user={user} />}
                             </div>
                         </div>
                     )}
