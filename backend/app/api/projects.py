@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from typing import List
 from app.services import project_service, file_service
-from app.services.git_service import get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit
+from app.services.git_service import get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit, sync_with_remote
 
 router = APIRouter()
 
@@ -274,6 +274,24 @@ async def get_project_commits(project_id: str, limit: int = 50):
     
     commits = get_commits_list(project.path, limit)
     return {"commits": commits}
+
+
+@router.post("/{project_id}/sync")
+async def sync_project(project_id: str):
+    """
+    Sync project repository with remote.
+    
+    Performs a git fetch and hard reset to match the remote branch state.
+    This will discard any local changes not pushed to remote.
+    """
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    result = sync_with_remote(project.path)
+    return result
+
 
 @router.get("/{project_id}/schematic")
 async def get_project_schematic(project_id: str):

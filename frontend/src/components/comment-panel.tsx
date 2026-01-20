@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { X, MessageSquare, CheckCircle, Circle, Send, Reply as ReplyIcon, ChevronDown, ChevronRight } from 'lucide-react';
-import { Comment, CreateReplyRequest } from '../types/comments';
+import { Comment } from '../types/comments';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
-import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 
 interface CommentPanelProps {
@@ -92,8 +91,8 @@ function FilterButton({ active, onClick, label }: { active: boolean, onClick: ()
         <button
             onClick={onClick}
             className={`px-3 py-1 text-xs rounded-full transition-colors ${active
-                    ? 'bg-primary text-primary-foreground font-medium'
-                    : 'bg-transparent text-muted-foreground hover:bg-muted'
+                ? 'bg-primary text-primary-foreground font-medium'
+                : 'bg-transparent text-muted-foreground hover:bg-muted'
                 }`}
         >
             {label}

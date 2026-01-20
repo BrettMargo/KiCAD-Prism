@@ -1,17 +1,74 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from './components/login-page';
 import { Button } from '@/components/ui/button';
 import { Workspace } from './components/workspace';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 
-function App() {
-    const [user, setUser] = useState<any>(null);
+interface User {
+    name: string;
+    email: string;
+    picture?: string;
+}
 
-    if (!user) {
-        return <LoginPage onLoginSuccess={setUser} />;
+interface AuthConfig {
+    auth_enabled: boolean;
+    allowed_domains: string[];
+    dev_mode: boolean;
+}
+
+function App() {
+    const [user, setUser] = useState<User | null>(null);
+    const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    // Fetch auth configuration on mount
+    useEffect(() => {
+        const fetchAuthConfig = async () => {
+            try {
+                const res = await fetch('/api/auth/config');
+                if (res.ok) {
+                    const config = await res.json();
+                    setAuthConfig(config);
+
+                    // If auth is disabled, auto-login as guest
+                    if (!config.auth_enabled) {
+                        setUser({ name: 'Guest', email: 'guest@local' });
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch auth config:', err);
+                // On error, default to no auth (allow access)
+                setUser({ name: 'Guest', email: 'guest@local' });
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAuthConfig();
+    }, []);
+
+    // Show loading state while fetching auth config
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-background">
+                <div className="text-muted-foreground">Loading...</div>
+            </div>
+        );
     }
 
+    // If auth is enabled and no user, show login page
+    if (authConfig?.auth_enabled && !user) {
+        return (
+            <LoginPage
+                onLoginSuccess={setUser}
+                allowedDomains={authConfig.allowed_domains}
+                devMode={authConfig.dev_mode}
+            />
+        );
+    }
+
+    // User is authenticated or auth is disabled - show app
     return (
         <BrowserRouter>
             <Routes>
@@ -25,8 +82,15 @@ function App() {
                                 </div>
 
                                 <div className="flex items-center gap-4">
-                                    <span className="text-sm text-muted-foreground">Welcome, {user.name}</span>
-                                    <Button variant="ghost" size="sm" onClick={() => setUser(null)}>Logout</Button>
+                                    {user && user.email !== 'guest@local' && (
+                                        <>
+                                            <span className="text-sm text-muted-foreground">Welcome, {user.name}</span>
+                                            <Button variant="ghost" size="sm" onClick={() => setUser(null)}>Logout</Button>
+                                        </>
+                                    )}
+                                    {user && user.email === 'guest@local' && (
+                                        <span className="text-sm text-muted-foreground">Viewing as Guest</span>
+                                    )}
                                 </div>
                             </div>
                         </header>

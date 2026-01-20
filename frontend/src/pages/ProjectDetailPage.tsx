@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, History, Box, FolderOpen, MessageSquare, ChevronLeft, ChevronRight, GitBranch, RotateCcw, PlayCircle } from "lucide-react";
+import { ArrowLeft, FileText, History, Box, FolderOpen, MessageSquare, ChevronLeft, ChevronRight, GitBranch, RotateCcw, PlayCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AssetsPortal } from "@/components/assets-portal";
 import ReactMarkdown from "react-markdown";
@@ -33,6 +33,8 @@ export function ProjectDetailPage() {
     const [sidebarHovered, setSidebarHovered] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const [commitsBehind, setCommitsBehind] = useState<number>(0);
+    const [syncing, setSyncing] = useState(false);
+    const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
     const currentCommit = searchParams.get('commit');
 
@@ -42,6 +44,33 @@ export function ProjectDetailPage() {
 
     const handleResetToLatest = () => {
         setSearchParams({});
+    };
+
+    const handleSync = async () => {
+        if (!projectId || syncing) return;
+
+        setSyncing(true);
+        setSyncMessage(null);
+
+        try {
+            const response = await fetch(`/api/projects/${projectId}/sync`, {
+                method: 'POST',
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setSyncMessage(data.message);
+                // Refresh project data and readme
+                window.location.reload();
+            } else {
+                const error = await response.json();
+                setSyncMessage(`Sync failed: ${error.detail}`);
+            }
+        } catch (err: any) {
+            setSyncMessage(`Sync failed: ${err.message}`);
+        } finally {
+            setSyncing(false);
+        }
     };
 
     useEffect(() => {
@@ -132,7 +161,38 @@ export function ProjectDetailPage() {
                     <h1 className="text-xl font-bold">{project.name}</h1>
                     <p className="text-sm text-muted-foreground">{project.description}</p>
                 </div>
+
+                {/* Sync Button */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSync}
+                    disabled={syncing}
+                    className="flex items-center gap-2"
+                    title="Sync with remote repository"
+                >
+                    <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
+                    {syncing ? 'Syncing...' : 'Sync'}
+                </Button>
             </header>
+
+            {/* Sync Message Banner */}
+            {syncMessage && (
+                <div className={cn(
+                    "px-6 py-2 text-sm border-b",
+                    syncMessage.includes('failed')
+                        ? "bg-red-500/10 border-red-500/20 text-red-500"
+                        : "bg-green-500/10 border-green-500/20 text-green-500"
+                )}>
+                    {syncMessage}
+                    <button
+                        onClick={() => setSyncMessage(null)}
+                        className="ml-2 text-xs underline"
+                    >
+                        Dismiss
+                    </button>
+                </div>
+            )}
 
             {/* Version Banner */}
             {currentCommit && (

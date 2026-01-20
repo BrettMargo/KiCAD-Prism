@@ -2,5 +2,7 @@ fastapi
 uvicorn
 gitpython
 pydantic
+pydantic-settings
+python-dotenv
 google-auth
 requests

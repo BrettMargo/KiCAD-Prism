@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useEffect, useState, useCallback } from "react";
-import { MessageCircle, CheckCircle } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import type { Comment } from "@/types/comments";
 
 interface CommentOverlayProps {
