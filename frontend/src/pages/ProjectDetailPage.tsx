@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, History, Box, FolderOpen, MessageSquare, ChevronLeft, ChevronRight, GitBranch, RotateCcw, PlayCircle, RefreshCw, Menu } from "lucide-react";
+import { ArrowLeft, FileText, History, Box, FolderOpen, ChevronLeft, ChevronRight, GitBranch, RotateCcw, PlayCircle, RefreshCw, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AssetsPortal } from "@/components/assets-portal";
 import ReactMarkdown from "react-markdown";
@@ -22,7 +22,7 @@ interface Project {
     last_modified: string;
 }
 
-type Section = "overview" | "history" | "visualizers" | "assets" | "documentation" | "collaboration" | "workflows";
+type Section = "overview" | "history" | "visualizers" | "assets" | "documentation" | "workflows";
 
 export function ProjectDetailPage() {
     const { projectId } = useParams<{ projectId: string }>();
@@ -156,7 +156,6 @@ export function ProjectDetailPage() {
         { id: "workflows" as Section, label: "Workflows", icon: PlayCircle },
         { id: "assets" as Section, label: "Assets Portal", icon: FolderOpen },
         { id: "documentation" as Section, label: "Documentation", icon: FileText },
-        { id: "collaboration" as Section, label: "Collaboration", icon: MessageSquare, disabled: true },
     ];
 
     return (
@@ -179,25 +178,19 @@ export function ProjectDetailPage() {
                                         <button
                                             key={item.id}
                                             onClick={() => {
-                                                if (!item.disabled) {
-                                                    setActiveSection(item.id);
-                                                    // Close sheet hack (simulate click on close or use ref - for simplicity we rely on user clicking outside or close button, 
-                                                    // but ideally we'd control open state. Since we didn't add open state control, we accept this limitations for MVP or can improve)
-                                                    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-                                                }
+                                                setActiveSection(item.id);
+                                                // Close sheet hack
+                                                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
                                             }}
-                                            disabled={item.disabled}
                                             className={cn(
                                                 "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                                                 activeSection === item.id
                                                     ? "bg-primary text-primary-foreground"
-                                                    : "hover:bg-muted text-foreground",
-                                                item.disabled && "opacity-50 cursor-not-allowed"
+                                                    : "hover:bg-muted text-foreground"
                                             )}
                                         >
                                             <Icon className="h-4 w-4" />
                                             <span className="flex-1 text-left">{item.label}</span>
-                                            {item.disabled && <span className="text-xs">(Soon)</span>}
                                         </button>
                                     );
                                 })}
@@ -304,24 +297,19 @@ export function ProjectDetailPage() {
                             return (
                                 <button
                                     key={item.id}
-                                    onClick={() => !item.disabled && setActiveSection(item.id)}
-                                    disabled={item.disabled}
+                                    onClick={() => setActiveSection(item.id)}
                                     className={cn(
                                         "w-full flex items-center rounded-md text-sm transition-colors",
                                         isExpanded ? "gap-3 px-3 py-2" : "justify-center py-2",
                                         activeSection === item.id
                                             ? "bg-primary text-primary-foreground"
-                                            : "hover:bg-muted text-foreground",
-                                        item.disabled && "opacity-50 cursor-not-allowed"
+                                            : "hover:bg-muted text-foreground"
                                     )}
                                     title={!isExpanded ? item.label : undefined}
                                 >
                                     <Icon className="h-4 w-4 flex-shrink-0" />
                                     {isExpanded && (
-                                        <>
-                                            <span className="flex-1 text-left">{item.label}</span>
-                                            {item.disabled && <span className="text-xs">(Soon)</span>}
-                                        </>
+                                        <span className="flex-1 text-left">{item.label}</span>
                                     )}
                                 </button>
                             );
@@ -408,11 +396,7 @@ export function ProjectDetailPage() {
                         </div>
                     )}
 
-                    {activeSection === "collaboration" && (
-                        <div className="flex items-center justify-center h-64 text-muted-foreground">
-                            <p>Coming soon...</p>
-                        </div>
-                    )}
+
                 </main>
             </div>
         </div>
