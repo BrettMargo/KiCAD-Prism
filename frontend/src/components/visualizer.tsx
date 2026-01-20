@@ -283,6 +283,19 @@ export function Visualizer({ projectId }: VisualizerProps) {
         }
     };
 
+    const handleDeleteComment = async (commentId: string) => {
+        try {
+            const response = await fetch(`/api/projects/${projectId}/comments/${commentId}`, {
+                method: "DELETE",
+            });
+            if (response.ok) {
+                setComments(prev => prev.filter(c => c.id !== commentId));
+            }
+        } catch (err) {
+            console.error("Failed to delete comment", err);
+        }
+    };
+
     // Filtering comments for Overlay
     const overlayComments = comments.filter(c => {
         // Must match context
@@ -414,6 +427,7 @@ export function Visualizer({ projectId }: VisualizerProps) {
                             onClose={() => setShowCommentPanel(false)}
                             onResolve={handleResolveComment}
                             onReply={handleReplyComment}
+                            onDelete={handleDeleteComment}
                             onCommentClick={handleCommentNavigate}
                         />
                     </div>

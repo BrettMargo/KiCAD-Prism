@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, MessageSquare, CheckCircle, Circle, Send, Reply as ReplyIcon, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, MessageSquare, CheckCircle, Circle, Send, Reply as ReplyIcon, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Comment } from '../types/comments';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
@@ -10,6 +10,7 @@ interface CommentPanelProps {
     onClose: () => void;
     onResolve: (commentId: string, resolved: boolean) => void;
     onReply: (commentId: string, content: string) => Promise<void>;
+    onDelete: (commentId: string) => Promise<void>;
     onCommentClick: (comment: Comment) => void;
 }
 
@@ -18,6 +19,7 @@ export function CommentPanel({
     onClose,
     onResolve,
     onReply,
+    onDelete,
     onCommentClick
 }: CommentPanelProps) {
     const [filter, setFilter] = useState<'ALL' | 'OPEN' | 'RESOLVED'>('ALL');
@@ -64,21 +66,53 @@ export function CommentPanel({
 
             {/* Comments List */}
             <ScrollArea className="flex-1 p-4">
-                <div className="space-y-4">
+                <div className="space-y-6">
                     {filteredComments.length === 0 ? (
                         <div className="text-center text-muted-foreground text-sm py-8">
                             No comments found.
                         </div>
                     ) : (
-                        filteredComments.map(comment => (
-                            <CommentCard
-                                key={comment.id}
-                                comment={comment}
-                                onResolve={onResolve}
-                                onReply={onReply}
-                                onClick={() => onCommentClick(comment)}
-                            />
-                        ))
+                        <>
+                            {filteredComments.filter(c => c.context === 'SCH').length > 0 && (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 px-1 py-1 bg-muted/30 rounded text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                                        Schematic
+                                    </div>
+                                    <div className="space-y-3">
+                                        {filteredComments.filter(c => c.context === 'SCH').map(comment => (
+                                            <CommentCard
+                                                key={comment.id}
+                                                comment={comment}
+                                                onResolve={onResolve}
+                                                onReply={onReply}
+                                                onDelete={onDelete}
+                                                onClick={() => onCommentClick(comment)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {filteredComments.filter(c => c.context === 'PCB').length > 0 && (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 px-1 py-1 bg-muted/30 rounded text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                                        PCB Layout
+                                    </div>
+                                    <div className="space-y-3">
+                                        {filteredComments.filter(c => c.context === 'PCB').map(comment => (
+                                            <CommentCard
+                                                key={comment.id}
+                                                comment={comment}
+                                                onResolve={onResolve}
+                                                onReply={onReply}
+                                                onDelete={onDelete}
+                                                onClick={() => onCommentClick(comment)}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </ScrollArea>
@@ -104,10 +138,11 @@ interface CommentCardProps {
     comment: Comment;
     onResolve: (id: string, resolved: boolean) => void;
     onReply: (id: string, content: string) => Promise<void>;
+    onDelete: (id: string) => Promise<void>;
     onClick: () => void;
 }
 
-function CommentCard({ comment, onResolve, onReply, onClick }: CommentCardProps) {
+function CommentCard({ comment, onResolve, onReply, onDelete, onClick }: CommentCardProps) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyContent, setReplyContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -164,6 +199,20 @@ function CommentCard({ comment, onResolve, onReply, onClick }: CommentCardProps)
                         >
                             <ReplyIcon className="w-3 h-3 mr-1" />
                             Reply
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Are you sure you want to delete this comment?")) {
+                                    onDelete(comment.id);
+                                }
+                            }}
+                        >
+                            <Trash2 className="w-3 h-3 mr-1" />
+                            Delete
                         </Button>
                     </div>
 
