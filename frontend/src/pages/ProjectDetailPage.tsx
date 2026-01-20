@@ -395,7 +395,7 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
 
                     {activeSection === "workflows" && (
                         <div>
-                            <WorkflowsPanel projectId={projectId!} />
+                            <WorkflowsPanel projectId={projectId!} user={user} />
                         </div>
                     )}
 
@@ -407,7 +407,7 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
 }
 
 // Workflows Sub-component
-function WorkflowsPanel({ projectId }: { projectId: string }) {
+function WorkflowsPanel({ projectId, user }: { projectId: string, user: User | null }) {
     const [runningJob, setRunningJob] = useState<{ id: string, type: string } | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [status, setStatus] = useState<string>("idle");
@@ -449,7 +449,10 @@ function WorkflowsPanel({ projectId }: { projectId: string }) {
             const res = await fetch(`/api/projects/${projectId}/workflows`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ type })
+                body: JSON.stringify({
+                    type,
+                    author: user?.name || "anonymous"
+                })
             });
 
             if (res.ok) {

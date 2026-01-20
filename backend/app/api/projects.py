@@ -51,6 +51,7 @@ async def get_job_status(job_id: str):
 
 class WorkflowRequest(BaseModel):
     type: str # design, manufacturing, render
+    author: Optional[str] = "anonymous"
 
 @router.post("/{project_id}/workflows")
 async def trigger_workflow(project_id: str, request: WorkflowRequest):
@@ -62,7 +63,7 @@ async def trigger_workflow(project_id: str, request: WorkflowRequest):
         raise HTTPException(status_code=400, detail="Invalid workflow type")
         
     try:
-        job_id = project_service.start_workflow_job(project_id, request.type)
+        job_id = project_service.start_workflow_job(project_id, request.type, request.author)
         return {"job_id": job_id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

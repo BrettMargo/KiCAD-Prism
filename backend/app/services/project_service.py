@@ -249,7 +249,8 @@ def _run_workflow_job(job_id: str, project_id: str, workflow_type: str):
                     
                     # Commit
                     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    commit_message = f"Generated {workflow_type} outputs - {timestamp}"
+                    author_name = job.get('author', 'anonymous')
+                    commit_message = f"Generated {workflow_type} outputs - {timestamp} by {author_name}"
                     job['logs'].append(f"Committing with message: '{commit_message}'")
                     
                     # Set local config for this commit to ensure it works even if global config is missing
@@ -295,7 +296,7 @@ def _run_workflow_job(job_id: str, project_id: str, workflow_type: str):
         job['logs'].append(f"Error: {str(e)}")
 
 
-def start_workflow_job(project_id: str, workflow_type: str) -> str:
+def start_workflow_job(project_id: str, workflow_type: str, author: str = "anonymous") -> str:
     job_id = str(uuid.uuid4())
     jobs[job_id] = {
         "status": "running",
@@ -304,7 +305,8 @@ def start_workflow_job(project_id: str, workflow_type: str) -> str:
         "project_id": project_id,
         "error": None,
         "logs": [],
-        "type": workflow_type
+        "type": workflow_type,
+        "author": author
     }
     
     thread = threading.Thread(target=_run_workflow_job, args=(job_id, project_id, workflow_type))
