@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import * as React from "react";
-import { AlertCircle, Cpu, Box, FileText, MessageSquarePlus, MessageSquare } from "lucide-react";
+import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Model3DViewer } from "./model-3d-viewer";
 import { CommentOverlay } from "./comment-overlay";
@@ -14,18 +14,11 @@ const EcadBlobWrapper = ({ filename, content }: { filename: string, content: str
 
     React.useLayoutEffect(() => {
         if (ref.current) {
-            // "ecad-blob" uses @attribute which syncs property <-> attribute. 
-            // Setting property is safer for large content.
-            // We cast to any because TS doesn't know about the custom element properties
             (ref.current as any).content = content;
-            // We set filename via attribute in JSX for immediate availability, but ensuring property sync here logic doesn't hurt.
             (ref.current as any).filename = filename;
-            // console.log(`EcadBlobWrapper: Set content for ${filename} (len: ${content.length})`);
         }
     }, [filename, content]);
 
-    // Pass filename as attribute to ensure it is available in the DOM immediately when ecad-viewer scans children.
-    // This fixes a race condition where ecad-viewer might load before useLayoutEffect assigns the property.
     return <ecad-blob ref={ref} filename={filename} />;
 };
 
@@ -36,8 +29,17 @@ interface VisualizerProps {
 type VisualizerTab = "ecad" | "3d" | "ibom";
 
 export function Visualizer({ projectId }: VisualizerProps) {
+    // We use a state for the viewer element to ensure the effect re-runs when it mounts
+    const [viewerElement, setViewerElement] = useState<HTMLElement | null>(null);
+    const viewerRef = useRef<HTMLElement | null>(null);
+
+    // Callback ref to sync state and ref
+    const setViewerRef = useCallback((node: HTMLElement | null) => {
+        viewerRef.current = node;
+        setViewerElement(node);
+    }, []);
+
     const [activeTab, setActiveTab] = useState<VisualizerTab>("ecad");
-    // We store the CONTENT of the files, not just URLs, to bypass loader issues
     const [schematicContent, setSchematicContent] = useState<string | null>(null);
     const [subsheets, setSubsheets] = useState<{ filename: string, content: string }[]>([]);
     const [pcbContent, setPcbContent] = useState<string | null>(null);
@@ -56,123 +58,96 @@ export function Visualizer({ projectId }: VisualizerProps) {
     const [pendingLocation, setPendingLocation] = useState<{ x: number, y: number, layer: string } | null>(null);
     const [pendingContext, setPendingContext] = useState<CommentContext>("PCB");
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
-    const viewerRef = React.useRef<HTMLElement>(null);
 
-    // Fetch comments for the project
-    const fetchComments = useCallback(async () => {
-        try {
-            const response = await fetch(`/api/projects/${projectId}/comments`);
-            if (response.ok) {
-                const data = await response.json();
-                setComments(data.comments || []);
-            }
-        } catch (err) {
-            console.warn("Failed to load comments", err);
-        }
-    }, [projectId]);
-
+    // Initial Data Fetch
     useEffect(() => {
-        const fetchFileContent = async () => {
+        const fetchData = async () => {
             setLoading(true);
             const baseUrl = `/api/projects/${projectId}`;
 
-            // Fetch schematic content
             try {
-                const response = await fetch(`${baseUrl}/schematic`);
-                if (response.ok) {
-                    const text = await response.text();
-                    console.log("Visualizer: Loaded schematic content", text.slice(0, 50));
-                    setSchematicContent(text);
-                    setActiveContext("SCH"); // Default to SCH if present? Or wait for tab event?
-                    // Actually ecad-viewer defaults to whatever it verifies first.
-                    // But we track it via events.
+                // Parallel fetch for main assets
+                const [schRes, pcbRes, modelRes, ibomRes, commentsRes] = await Promise.allSettled([
+                    fetch(`${baseUrl}/schematic`),
+                    fetch(`${baseUrl}/pcb`),
+                    fetch(`${baseUrl}/3d-model`),
+                    fetch(`${baseUrl}/ibom`),
+                    fetch(`/api/projects/${projectId}/comments`)
+                ]);
 
-                    // Fetch subsheets
+                // Handle Schematic
+                if (schRes.status === "fulfilled" && schRes.value.ok) {
+                    setSchematicContent(await schRes.value.text());
+                    // Try fetch subsheets
                     try {
                         const subsheetsRes = await fetch(`${baseUrl}/schematic/subsheets`);
                         if (subsheetsRes.ok) {
                             const data = await subsheetsRes.json();
-                            if (data.files && data.files.length > 0) {
+                            if (data.files?.length) {
                                 const subsheetPromises = data.files.map(async (f: any) => {
-                                    const res = await fetch(f.url);
-                                    const content = await res.text();
-
+                                    const cRes = await fetch(f.url);
                                     let filename = f.name || f.path || f.url.split('/').pop() || "subsheet.kicad_sch";
                                     if (!filename.endsWith('.kicad_sch')) filename += '.kicad_sch';
-                                    if (!filename.includes('/') && f.url.includes('Subsheets')) {
-                                        filename = `Subsheets/${filename}`;
-                                    }
-                                    return { filename, content };
+                                    if (!filename.includes('/') && f.url.includes('Subsheets')) filename = `Subsheets/${filename}`;
+                                    return { filename, content: await cRes.text() };
                                 });
-                                const loadedSubsheets = await Promise.all(subsheetPromises);
-                                setSubsheets(loadedSubsheets);
+                                setSubsheets(await Promise.all(subsheetPromises));
                             }
                         }
-                    } catch (err) {
-                        console.warn("Failed to load subsheets", err);
+                    } catch (e) {
+                        console.warn("Subsheets fetch failed", e);
                     }
                 } else {
-                    setError(prev => ({ ...prev, schematic: "Schematic file not found" }));
+                    setError(prev => ({ ...prev, schematic: "Schematic not found" }));
                 }
-            } catch (err) {
-                setError(prev => ({ ...prev, schematic: "Failed to load schematic" }));
-            }
 
-            // Fetch PCB content
-            try {
-                const response = await fetch(`${baseUrl}/pcb`);
-                if (response.ok) {
-                    const text = await response.text();
-                    console.log("Visualizer: Loaded PCB content", text.slice(0, 50));
-                    setPcbContent(text);
-                    // If PCB loads, usually it becomes the default view if available?
-                    // We'll rely on events.
+                // Handle PCB
+                if (pcbRes.status === "fulfilled" && pcbRes.value.ok) {
+                    setPcbContent(await pcbRes.value.text());
+                    setActiveContext("PCB"); // Default preference if available (often main view)
+                } else {
+                    // if no PCB, SCH will be default from logic below
+                    setError(prev => ({ ...prev, pcb: "PCB not found" }));
                 }
-            } catch (err) {
-                setError(prev => ({ ...prev, pcb: "PCB file not found" }));
-            }
 
-            // Fetch 3D model
-            try {
-                const response = await fetch(`${baseUrl}/3d-model`);
-                if (response.ok) {
+                // Handle 3D
+                if (modelRes.status === "fulfilled" && modelRes.value.ok) {
                     setModelUrl(`${baseUrl}/3d-model`);
                 }
-            } catch (err) {
-                setError(prev => ({ ...prev, model: "3D model not found" }));
-            }
 
-            // Fetch iBoM
-            try {
-                const response = await fetch(`${baseUrl}/ibom`);
-                if (response.ok) {
+                // Handle iBoM
+                if (ibomRes.status === "fulfilled" && ibomRes.value.ok) {
                     setIbomUrl(`${baseUrl}/ibom`);
                 }
-            } catch (err) {
-                setError(prev => ({ ...prev, ibom: "iBoM file not found" }));
-            }
 
-            setLoading(false);
-            fetchComments();
+                // Handle Comments
+                if (commentsRes.status === "fulfilled" && commentsRes.value.ok) {
+                    const cData = await commentsRes.value.json();
+                    setComments(cData.comments || []);
+                }
+
+            } catch (err) {
+                console.error("Error loading visualizer data", err);
+            } finally {
+                setLoading(false);
+            }
         };
 
-        fetchFileContent();
-    }, [projectId, fetchComments]);
+        fetchData();
+    }, [projectId]);
 
-    // Update activeContext when content loading finishes or changes
+    // Update active context preference
     useEffect(() => {
         if (!loading) {
-            if (pcbContent) {
-                setActiveContext("PCB");
-            } else if (schematicContent) {
-                setActiveContext("SCH");
-            }
+            if (pcbContent) setActiveContext("PCB");
+            else if (schematicContent) setActiveContext("SCH");
         }
     }, [loading, pcbContent, schematicContent]);
 
-    // Handle events from ecad-viewer (navigation, clicks)
+    // Event Listeners for ecad-viewer
+    // Event Listeners for ecad-viewer
     useEffect(() => {
-        const viewer = viewerRef.current;
+        const viewer = viewerElement;
         if (!viewer) return;
 
         const handleCommentClick = (e: CustomEvent) => {
@@ -182,25 +157,20 @@ export function Visualizer({ projectId }: VisualizerProps) {
                 y: detail.worldY,
                 layer: detail.layer || "F.Cu",
             });
-            setPendingContext(detail.context); // "PCB" | "SCH"
+            setPendingContext(detail.context || activeContext);
             setShowCommentForm(true);
         };
 
         const handleTabActivate = (e: CustomEvent) => {
-            // detail.current is "PCB" or "SCH" (TabKind enum values are uppercase)
-            const kind = e.detail.current;
-
+            const kind = e.detail.current; // "PCB" | "SCH"
             if (kind === "PCB") setActiveContext("PCB");
             else if (kind === "SCH") setActiveContext("SCH");
-
-            // Note: activeContext will update on next render
         };
 
         const handleSheetLoad = (e: CustomEvent) => {
-            // detail is the filename/path
-            if (typeof e.detail === 'string') {
-                setActivePage(e.detail);
-            }
+            if (typeof e.detail === 'string') setActivePage(e.detail);
+            else if (e.detail?.filename) setActivePage(e.detail.filename);
+            else if (e.detail?.sheetName) setActivePage(e.detail.sheetName);
         };
 
         viewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
@@ -212,39 +182,38 @@ export function Visualizer({ projectId }: VisualizerProps) {
             viewer.removeEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
             viewer.removeEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
         };
-    }, [loading, schematicContent, pcbContent]);
+    }, [activeContext, viewerElement]);
 
-    // Toggle comment mode on the viewer
+    // Toggle Comment Mode
     const toggleCommentMode = () => {
         const newMode = !commentMode;
         setCommentMode(newMode);
 
         const viewer = viewerRef.current as any;
-        if (viewer?.setCommentMode) {
-            viewer.setCommentMode(newMode);
-        } else if (viewer) {
-            if (newMode) viewer.setAttribute("comment-mode", "true");
-            else viewer.removeAttribute("comment-mode");
+        if (viewer) {
+            if (viewer.setCommentMode) {
+                viewer.setCommentMode(newMode);
+            } else if (viewer) {
+                if (newMode) viewer.setAttribute("comment-mode", "true");
+                else viewer.removeAttribute("comment-mode");
+            }
         }
     };
 
-    // Submit new comment
+    // Submit Comment
     const handleSubmitComment = async (content: string) => {
         if (!pendingLocation) return;
-
         setIsSubmittingComment(true);
         try {
-            // If context is SCH, include the active page
             const location = { ...pendingLocation, page: pendingContext === "SCH" ? activePage : "" };
-
             const response = await fetch(`/api/projects/${projectId}/comments`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     context: pendingContext,
-                    location: location,
-                    content: content,
-                }),
+                    location,
+                    content
+                })
             });
 
             if (response.ok) {
@@ -252,48 +221,36 @@ export function Visualizer({ projectId }: VisualizerProps) {
                 setComments(prev => [...prev, newComment]);
                 setShowCommentForm(false);
                 setPendingLocation(null);
-            } else {
-                console.error("Failed to create comment:", await response.text());
+                // Turn off comment mode after posting? User might want to post multiple. Keep it on.
             }
         } catch (err) {
-            console.error("Error creating comment:", err);
+            console.error("Create comment failed", err);
         } finally {
             setIsSubmittingComment(false);
         }
     };
 
-    // Handle pin click
-    const handlePinClick = (_comment: Comment) => {
-        setShowCommentPanel(true);
-    };
-
+    // Navigate to Comment
     const handleCommentNavigate = (comment: Comment) => {
         const viewer = viewerRef.current as any;
         if (!viewer) return;
 
-        // 1. Ensure we are in ECAD tab
+        // Force switch to ECAD tab if in 3D/iBom
         if (activeTab !== "ecad") setActiveTab("ecad");
 
-        // 2. Switch context if needed (handled by viewer usually if we request zoom, but better to be explicit)
-        // ecad-viewer doesn't expose strict "switch to tab" API easily, but if we are in "ecad" mode,
-        // checks if comment context matches active context.
-        // If mismatched, we might need a way to tell viewers to switch.
-        // However, since we added `switchPage` for SCH, we can use that.
-        // For PCB vs SCH toggle, usually `ecad-viewer` has UI tabs.
-        // We can check if `viewer.switchTab` exists? No.
-
-        // Let's rely on standard behavior or implicit switching if possible.
-        // If not, we might need to add `switchTab` to ecad-viewer.
-        // But context switching (PCB<->SCH) is major.
+        // Logic to switch context (PCB vs SCH)
+        // We lack a direct public API to switch TABS in ecad-viewer easily (it's internal).
+        // But if comment is SCH and we are on PCB, we should try.
+        // Assuming user actively manages tabs, or we try `switchPage` which might force SCH.
 
         if (comment.context === "SCH") {
-            // Switch to SCH if on PCB??
-            // We don't have a direct API for that yet. 
-            // Assuming user can manually switch if needed, or we implement that in ecad-viewer too?
-
             if (comment.location.page) {
+                // This might auto-switch tab if implemented in viewer
                 viewer.switchPage(comment.location.page);
             }
+        } else {
+            // If PCB, we might not have a switch to PCB method exposed yet
+            // Maybe zooming works?
         }
 
         if (viewer.zoomToLocation) {
@@ -301,220 +258,172 @@ export function Visualizer({ projectId }: VisualizerProps) {
         }
     };
 
-    // Handle resolve/reopen comment
+    // Resolving/Replying
     const handleResolveComment = async (commentId: string, resolved: boolean) => {
-        try {
-            const response = await fetch(`/api/projects/${projectId}/comments/${commentId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: resolved ? "RESOLVED" : "OPEN" }),
-            });
-
-            if (response.ok) {
-                const updatedComment = await response.json();
-                setComments(prev => prev.map(c => c.id === commentId ? updatedComment : c));
-            }
-        } catch (err) {
-            console.error("Error updating comment status:", err);
+        const response = await fetch(`/api/projects/${projectId}/comments/${commentId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: resolved ? "RESOLVED" : "OPEN" })
+        });
+        if (response.ok) {
+            const updated = await response.json();
+            setComments(prev => prev.map(c => c.id === commentId ? updated : c));
         }
     };
 
-    // Handle reply to comment
     const handleReplyComment = async (commentId: string, content: string) => {
-        try {
-            const response = await fetch(`/api/projects/${projectId}/comments/${commentId}/replies`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content }),
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setComments(prev => prev.map(c => c.id === commentId ? data.comment : c));
-            }
-        } catch (err) {
-            console.error("Error replying to comment:", err);
+        const response = await fetch(`/api/projects/${projectId}/comments/${commentId}/replies`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            setComments(prev => prev.map(c => c.id === commentId ? data.comment : c));
         }
     };
 
-    // Filter comments for overlay
+    // Filtering comments for Overlay
     const overlayComments = comments.filter(c => {
-        // Must match active context (PCB or SCH)
-        const contextMatch = c.context === activeContext;
-        if (!contextMatch) return false;
+        // Must match context
+        if (c.context !== activeContext) return false;
 
-        // If SCH, must match active page
+        // If SCH, match page
         if (activeContext === "SCH") {
-            const pageMatch = c.location.page ? (c.location.page === activePage) : (activePage === "root.kicad_sch");
-            return pageMatch;
-        }
+            const norm = (p: string) => p ? p.split('/').pop() || p : "";
+            const cPage = norm(c.location.page || "");
+            const aPage = norm(activePage);
+            // Root handling
+            const isRootC = cPage === "root.kicad_sch" || cPage === "root";
+            const isRootA = aPage === "root.kicad_sch" || aPage === "root";
 
+            if (isRootA && isRootC) return true;
+            return cPage === aPage;
+        }
         return true;
     });
 
+    // Tab Config
     const tabs: { id: VisualizerTab; label: string; icon: any }[] = [
         { id: "ecad", label: "Schematic & PCB", icon: Cpu },
         { id: "3d", label: "3D View", icon: Box },
         { id: "ibom", label: "iBoM", icon: FileText },
     ];
 
-    if (loading) {
-        return <div className="flex items-center justify-center h-96">Loading visualizer...</div>;
-    }
+    if (loading) return <div className="flex justify-center items-center h-full">Loading Visualizer...</div>;
 
     return (
-        <div className="flex flex-col h-full">
-            {/* Tab Bar */}
-            <div className="flex gap-2 border-b mb-4">
+        <div className="flex flex-col h-full bg-background relative selection-none">
+            {/* Toolbar */}
+            <div className="flex items-center gap-1 border-b px-2 py-1 bg-muted/20">
                 {tabs.map(tab => {
                     const Icon = tab.icon;
                     return (
                         <Button
                             key={tab.id}
-                            variant={activeTab === tab.id ? "default" : "ghost"}
-                            className="rounded-b-none"
+                            variant={activeTab === tab.id ? "secondary" : "ghost"}
+                            size="sm"
                             onClick={() => setActiveTab(tab.id)}
+                            className="text-xs h-8"
                         >
-                            <Icon className="h-4 w-4 mr-2" />
+                            <Icon className="w-3 h-3 mr-2" />
                             {tab.label}
                         </Button>
                     );
                 })}
-
-                {/* Spacer */}
                 <div className="flex-1" />
 
-                {/* Comment Mode Toggle - only show on ECAD tab */}
+                {/* Comment Controls */}
                 {activeTab === "ecad" && (
-                    <div className="flex gap-2">
+                    <>
                         <Button
                             variant={commentMode ? "default" : "ghost"}
-                            className={commentMode ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}
                             size="sm"
                             onClick={toggleCommentMode}
-                            title={commentMode ? "Exit Commenting Mode" : "Add Comment"}
+                            className={`text-xs h-8 ${commentMode ? "bg-amber-600 text-white hover:bg-amber-700" : ""}`}
                         >
-                            <MessageSquarePlus className="w-4 h-4 mr-2" />
+                            <MessageSquarePlus className="w-3 h-3 mr-2" />
                             {commentMode ? "Commenting Mode" : "Add Comment"}
                         </Button>
                         <Button
                             variant={showCommentPanel ? "secondary" : "ghost"}
                             size="sm"
                             onClick={() => setShowCommentPanel(!showCommentPanel)}
-                            title="View Comments"
+                            className="text-xs h-8 ml-1"
                         >
-                            <MessageSquare className="w-4 h-4 mr-2" />
+                            <MessageSquare className="w-3 h-3 mr-2" />
                             Comments
+                            <span className="ml-1 bg-muted-foreground/20 px-1 rounded-full text-[10px]">
+                                {comments.length}
+                            </span>
                         </Button>
+                    </>
+                )}
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 relative overflow-hidden">
+                {/* ECAD View */}
+                <div className={`absolute inset-0 ${activeTab === "ecad" ? "z-10" : "z-0 hidden"}`}>
+                    {schematicContent || pcbContent ? (
+                        <>
+                            <ecad-viewer
+                                ref={setViewerRef}
+                                style={{ width: '100%', height: '100%' }}
+                            >
+                                {schematicContent && <EcadBlobWrapper filename="root.kicad_sch" content={schematicContent} />}
+                                {subsheets.map(s => <EcadBlobWrapper key={s.filename} filename={s.filename} content={s.content} />)}
+                                {pcbContent && <EcadBlobWrapper filename="board.kicad_pcb" content={pcbContent} />}
+                            </ecad-viewer>
+
+                            <CommentOverlay
+                                comments={overlayComments}
+                                viewerRef={viewerRef}
+                                onPinClick={() => {
+                                    setShowCommentPanel(true);
+                                    // optional: focus comment in panel
+                                }}
+                            />
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                            <p>No design files found.</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* 3D View */}
+                {activeTab === "3d" && (
+                    <div className="absolute inset-0 z-20 bg-background">
+                        {modelUrl ? <Model3DViewer modelUrl={modelUrl} /> : <div className="p-10">No 3D Model</div>}
+                    </div>
+                )}
+
+                {/* iBoM View */}
+                {activeTab === "ibom" && (
+                    <div className="absolute inset-0 z-20 bg-white">
+                        {ibomUrl ? <iframe src={ibomUrl} className="w-full h-full border-0" /> : <div className="p-10">No iBoM Found</div>}
+                    </div>
+                )}
+
+                {/* Sidebar Overlay */}
+                {showCommentPanel && (
+                    <div className="absolute top-0 right-0 bottom-0 z-50 animate-in slide-in-from-right">
+                        <CommentPanel
+                            comments={comments}
+                            onClose={() => setShowCommentPanel(false)}
+                            onResolve={handleResolveComment}
+                            onReply={handleReplyComment}
+                            onCommentClick={handleCommentNavigate}
+                        />
                     </div>
                 )}
             </div>
 
-            {/* Viewer Area */}
-            <div className="flex-1 min-h-0 bg-background relative">
-                {/* ECAD Tab */}
-                <div className={activeTab === "ecad" ? "h-full relative" : "hidden"}>
-                    {(schematicContent || pcbContent) ? (
-                        <>
-                            <ecad-viewer
-                                ref={viewerRef}
-                                key={`${projectId}-ecad`}
-                                style={{
-                                    width: '100%',
-                                    height: '100%'
-                                }}
-                            >
-                                {/* Inject Root Schematic */}
-                                {schematicContent && (
-                                    <EcadBlobWrapper filename="root.kicad_sch" content={schematicContent} />
-                                )}
-
-                                {/* Inject Subsheets */}
-                                {subsheets.map((sheet) => (
-                                    <EcadBlobWrapper key={sheet.filename} filename={sheet.filename} content={sheet.content} />
-                                ))}
-
-                                {/* Inject PCB */}
-                                {pcbContent && (
-                                    <EcadBlobWrapper filename="board.kicad_pcb" content={pcbContent} />
-                                )}
-                            </ecad-viewer>
-
-                            {/* Comment Overlay */}
-                            <CommentOverlay
-                                comments={overlayComments}
-                                viewerRef={viewerRef}
-                                onPinClick={handlePinClick}
-                                showResolved={true}
-                            />
-                        </>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-96 text-muted-foreground">
-                            <AlertCircle className="h-12 w-12 mb-4" />
-                            <p>No ECAD files found</p>
-                            <div className="text-sm mt-2 text-center">
-                                {error.schematic && <p>Schematic: {error.schematic}</p>}
-                                {error.pcb && <p>PCB: {error.pcb}</p>}
-                                {!error.schematic && !error.pcb && <p>Ensure .kicad_sch or .kicad_pcb files exist</p>}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* 3D Tab */}
-                <div className={activeTab === "3d" ? "h-full" : "hidden"}>
-                    {modelUrl ? (
-                        <Model3DViewer modelUrl={modelUrl} />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-96 text-muted-foreground">
-                            <AlertCircle className="h-12 w-12 mb-4" />
-                            <p>3D model not available</p>
-                            <p className="text-sm mt-2">Generate a .glb file in Design-Outputs/3DModel/</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* iBoM Tab */}
-                <div className={activeTab === "ibom" ? "h-full" : "hidden"}>
-                    {ibomUrl ? (
-                        <div className="flex flex-col h-full bg-white rounded-lg overflow-hidden border shadow-sm">
-                            <iframe
-                                src={ibomUrl}
-                                className="w-full h-full border-0"
-                                title="Interactive BoM"
-                            />
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-96 text-muted-foreground bg-slate-50 border border-dashed rounded-lg">
-                            <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
-                            <p className="font-medium">Interactive BoM not found</p>
-                            <p className="text-sm mt-1">Generate an iBoM HTML file using KiCAD InteractiveHtmlBom plugin</p>
-                            <p className="text-xs mt-4 text-slate-400">Place it in Design-Outputs/ directory</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Comment Panel */}
-            {showCommentPanel && (
-                <div className="absolute top-[48px] bottom-0 right-0 z-40 bg-background border-l shadow-xl animate-in slide-in-from-right">
-                    <CommentPanel
-                        comments={comments}
-                        onClose={() => setShowCommentPanel(false)}
-                        onResolve={handleResolveComment}
-                        onReply={handleReplyComment}
-                        onCommentClick={handleCommentNavigate}
-                    />
-                </div>
-            )}
-
-            {/* Comment Form Modal */}
+            {/* Modals */}
             <CommentForm
                 isOpen={showCommentForm}
-                onClose={() => {
-                    setShowCommentForm(false);
-                    setPendingLocation(null);
-                }}
+                onClose={() => setShowCommentForm(false)}
                 onSubmit={handleSubmitComment}
                 location={pendingLocation}
                 context={pendingContext}

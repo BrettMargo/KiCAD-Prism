@@ -37,6 +37,13 @@ export function ProjectDetailPage() {
     const [commitsBehind, setCommitsBehind] = useState<number>(0);
     const [syncing, setSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
+    const [visualizerLoaded, setVisualizerLoaded] = useState(false);
+
+    useEffect(() => {
+        if (activeSection === 'visualizers') {
+            setVisualizerLoaded(true);
+        }
+    }, [activeSection]);
 
     const currentCommit = searchParams.get('commit');
 
@@ -381,8 +388,13 @@ export function ProjectDetailPage() {
                         </div>
                     )}
 
-                    {activeSection === "visualizers" && (
-                        <div className="h-full flex flex-col">
+                    {visualizerLoaded && ( // Render only if visualizer has been loaded at least once
+                        <div
+                            className={cn(
+                                "h-full flex flex-col",
+                                activeSection !== "visualizers" && "hidden" // Hide if not active
+                            )}
+                        >
                             <h2 className="text-2xl font-bold mb-6">Visualizers</h2>
                             <div className="flex-1 min-h-0">
                                 {projectId && <Visualizer projectId={projectId} />}
