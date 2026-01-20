@@ -96,7 +96,19 @@ By default, it runs on `http://localhost:5173`. Make sure the backend is running
 
 ## 3. Authentication Setup
 
-KiCAD Prism supports optional Google Sign-in with domain restrictions. You can run the platform in three modes:
+KiCAD Prism supports optional Google Sign-in with domain restrictions.
+
+### How to Turn ON Authentication
+
+To enable authentication for your deployment:
+
+1. **Backend**: Set `GOOGLE_CLIENT_ID` in `backend/.env` and set `DEV_MODE=False`.
+2. **Frontend**: Set `VITE_GOOGLE_CLIENT_ID` in `frontend/.env` to match the backend.
+3. **Allowed Domains**: Configure `ALLOWED_DOMAINS_STR` in `backend/.env` with your organization's domains.
+
+Once configured, the system will automatically show the login page and restrict access.
+
+### Configuration Modes
 
 ### Option 1: Public Gallery (No Authentication)
 

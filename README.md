@@ -78,6 +78,16 @@ npm run dev
 
 KiCAD Prism supports optional Google Sign-in with domain restrictions.
 
+### How to Turn ON Authentication
+
+To enable authentication for your deployment:
+
+1. **Backend**: Set `GOOGLE_CLIENT_ID` in `backend/.env` and set `DEV_MODE=False`.
+2. **Frontend**: Set `VITE_GOOGLE_CLIENT_ID` in `frontend/.env` to match the backend.
+3. **Allowed Domains**: Configure `ALLOWED_DOMAINS_STR` in `backend/.env`.
+
+Once configured, the system will automatically show the login page and restrict access.
+
 ### Configuration Options
 
 | Mode | GOOGLE_CLIENT_ID | DEV_MODE | Behavior |
