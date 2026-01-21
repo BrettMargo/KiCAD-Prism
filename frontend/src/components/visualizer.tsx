@@ -78,12 +78,14 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
 
             try {
                 // Parallel fetch for main assets
-                const [schRes, pcbRes, modelRes, ibomRes, commentsRes] = await Promise.allSettled([
+                // We also fetch the file list to find the specific .glb in Design-Outputs/3DModel
+                const [schRes, pcbRes, modelRes, ibomRes, commentsRes, filesRes] = await Promise.allSettled([
                     fetch(`${baseUrl}/schematic`),
                     fetch(`${baseUrl}/pcb`),
                     fetch(`${baseUrl}/3d-model`),
                     fetch(`${baseUrl}/ibom`),
-                    fetch(`/api/projects/${projectId}/comments`)
+                    fetch(`/api/projects/${projectId}/comments`),
+                    fetch(`${baseUrl}/files?type=design`)
                 ]);
 
                 // Handle Schematic
@@ -122,7 +124,26 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 }
 
                 // Handle 3D
-                if (modelRes.status === "fulfilled" && modelRes.value.ok) {
+                // Strategy: favor a .glb found in Design-Outputs/3DModel for better viewer compatibility
+                let glbUrl = null;
+                if (filesRes.status === "fulfilled" && filesRes.value.ok) {
+                    try {
+                        const files = await filesRes.value.json();
+                        const glbFile = files.find((f: any) =>
+                            f.path.toLowerCase().startsWith("3dmodel/") &&
+                            f.name.toLowerCase().endsWith(".glb")
+                        );
+                        if (glbFile) {
+                            glbUrl = `${baseUrl}/asset/Design-Outputs/${glbFile.path}`;
+                        }
+                    } catch (e) {
+                        console.warn("Error parsing design files", e);
+                    }
+                }
+
+                if (glbUrl) {
+                    setModelUrl(glbUrl);
+                } else if (modelRes.status === "fulfilled" && modelRes.value.ok) {
                     setModelUrl(`${baseUrl}/3d-model`);
                 }
 
