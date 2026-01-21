@@ -12,8 +12,11 @@ KiCAD Prism is a modern, high-performance web-based platform designed for visual
 
 Manage all your KiCAD repositories in a unified dashboard. Import projects directly from GitHub via async jobs with real-time status tracking.
 
-![Workspace Overview](assets/KiCAD-Prism-Workspace.png)
-![Importing Repositories](assets/KiCAD-Prism-Importing-Repo.png)
+<p align="center">
+  <img src="assets/KiCAD-Prism-Workspace.png" width="45%" alt="Workspace Overview">
+  <img src="assets/KiCAD-Prism-Importing-Repo.png" width="45%" alt="Importing Repositories">
+</p>
+
 *Unified dashboard with repository management and GitHub import flow.*
 
 ### The Visualizer Suite
@@ -24,14 +27,37 @@ A comprehensive design explorer that renders schematics and PCBs natively in the
 - **3D Visualization**: Real-time 3D model viewing with adjustable Scene Brightness and Directionality.
 - **Interactive BOM**: Integrated [Interactive HTML BOM](https://github.com/quindorian/Sublime-iBOM-Plugin) suite for assembly and review.
 
-![Schematic Viewer](assets/KiCAD-Prism-Visualizer-SCH.png)
+<p align="center">
+  <img src="assets/KiCAD-Prism-Visualizer-SCH.png" width="45%" alt="Schematic Viewer">
+  <img src="assets/KiCAD-Prism-Visualizer-PCB.png" width="45%" alt="PCB Viewer">
+</p>
+
+<p align="center">
+  <img src="assets/KiCAD-Prism-Visualiser-3DView.png" width="45%" alt="3D Viewer">
+  <img src="assets/KiCAD-Prism-Visualizer-ibom.png" width="45%" alt="Interactive BOM">
+</p>
+
 *High-fidelity schematic exploration.*
 
 ### Collaborative Design Reviews
 
 Move away from disjointed feedback. Add contextual comments directly on design elements. Comments can be replied to, resolved, and are visualised as pins in the design overlay.
 
-![Comment System Demo](assets/KiCAD-Prism-Comment-Demo.mov)  
+<p align="center">
+  <img src="assets/KiCAD-Prism-Commenting-Mode.png" width="45%" alt="Commenting Mode">
+  <img src="assets/KiCAD-Prism-Comment-Dialog.png" width="45%" alt="Comment Dialog">
+</p>
+
+After a comment is added by the user, the comment is stored in a JSON file at `./comments/comments.json` inside the repository and a pin is placed on the schematic at the location where the comment was added. The pin is visible in the schematic viewer and can be clicked to view the comment.  
+In the Comments Panel, the user can view all the comments and replies in a threaded manner. The user can also reply to a comment and the reply will be stored in the JSON file and can be viewed in the schematic viewer. Clicking on an entry in the comments panel will zoom into the schematic/PCB at the location where the comment was added.
+
+<p align="center">
+  <img src="assets/KiCAD-Prism-Comments-Panel-Reply.png" width="45%" alt="Comments Panel & Replies">
+  <img src="assets/KiCAD-Prism-Comment-JSON.png" width="45%" alt="Comment JSON">
+</p>
+
+Pressing the Push Comments button will push the latest files in the backend to the remote repository with a commit message.
+
 *Threaded design reviews with spatial context.*
 
 ### Integrated Documentation & Assets
