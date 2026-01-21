@@ -13,8 +13,8 @@ KiCAD Prism is a modern, high-performance web-based platform designed for visual
 Manage all your KiCAD repositories in a unified dashboard. Import projects directly from GitHub via async jobs with real-time status tracking.
 
 <p align="center">
-  <img src="assets/KiCAD-Prism-Workspace.png" width="45%" alt="Workspace Overview">
-  <img src="assets/KiCAD-Prism-Importing-Repo.png" width="45%" alt="Importing Repositories">
+  <img src="assets/KiCAD-Prism-Workspace.png" width="49%" alt="Workspace Overview">
+  <img src="assets/KiCAD-Prism-Importing-Repo.png" width="49%" alt="Importing Repositories">
 </p>
 
 *Unified dashboard with repository management and GitHub import flow.*
@@ -28,13 +28,13 @@ A comprehensive design explorer that renders schematics and PCBs natively in the
 - **Interactive BOM**: Integrated [Interactive HTML BOM](https://github.com/quindorian/Sublime-iBOM-Plugin) suite for assembly and review.
 
 <p align="center">
-  <img src="assets/KiCAD-Prism-Visualizer-SCH.png" width="45%" alt="Schematic Viewer">
-  <img src="assets/KiCAD-Prism-Visualizer-PCB.png" width="45%" alt="PCB Viewer">
+  <img src="assets/KiCAD-Prism-Visualizer-SCH.png" width="49%" alt="Schematic Viewer">
+  <img src="assets/KiCAD-Prism-Visualizer-PCB.png" width="49%" alt="PCB Viewer">
 </p>
 
 <p align="center">
-  <img src="assets/KiCAD-Prism-Visualiser-3DView.png" width="45%" alt="3D Viewer">
-  <img src="assets/KiCAD-Prism-Visualizer-ibom.png" width="45%" alt="Interactive BOM">
+  <img src="assets/KiCAD-Prism-Visualiser-3DView.png" width="49%" alt="3D Viewer">
+  <img src="assets/KiCAD-Prism-Visualizer-ibom.png" width="49%" alt="Interactive BOM">
 </p>
 
 *High-fidelity schematic exploration.*
@@ -44,16 +44,16 @@ A comprehensive design explorer that renders schematics and PCBs natively in the
 Move away from disjointed feedback. Add contextual comments directly on design elements. Comments can be replied to, resolved, and are visualised as pins in the design overlay.
 
 <p align="center">
-  <img src="assets/KiCAD-Prism-Commenting-Mode.png" width="45%" alt="Commenting Mode">
-  <img src="assets/KiCAD-Prism-Comment-Dialog.png" width="45%" alt="Comment Dialog">
+  <img src="assets/KiCAD-Prism-Commenting-Mode.png" width="49%" alt="Commenting Mode">
+  <img src="assets/KiCAD-Prism-Comment-Dialog.png" width="49%" alt="Comment Dialog">
 </p>
 
 After a comment is added by the user, the comment is stored in a JSON file at `./comments/comments.json` inside the repository and a pin is placed on the schematic at the location where the comment was added. The pin is visible in the schematic viewer and can be clicked to view the comment.  
 In the Comments Panel, the user can view all the comments and replies in a threaded manner. The user can also reply to a comment and the reply will be stored in the JSON file and can be viewed in the schematic viewer. Clicking on an entry in the comments panel will zoom into the schematic/PCB at the location where the comment was added.
 
 <p align="center">
-  <img src="assets/KiCAD-Prism-Comments-Panel-Reply.png" width="45%" alt="Comments Panel & Replies">
-  <img src="assets/KiCAD-Prism-Comment-JSON.png" width="45%" alt="Comment JSON">
+  <img src="assets/KiCAD-Prism-Comments-Panel-Reply.png" width="49%" alt="Comments Panel & Replies">
+  <img src="assets/KiCAD-Prism-Comment-JSON.png" width="49%" alt="Comment JSON">
 </p>
 
 Pressing the Push Comments button will push the latest files in the backend to the remote repository with a commit message.
@@ -148,7 +148,8 @@ KiCAD-Prism/
 - [x] High-performance Schematic & PCB Viewers
 - [x] Collaborative Threaded Design Review
 - [x] Automated Workflow Generation
-- [ ] Fix page transition logic
+- [ ] Fix page transition logic completely
+- [ ] KiCAD Plugin to overlay comments on the schematic and PCB editors
 - [ ] Visual Git Diff (integrating [Kiri](https://github.com/leoheck/kiri))
 - [ ] User Permissions & Role-Based Access
 - [ ] Real-time Collaboration (WebSockets)
@@ -170,3 +171,7 @@ Built with ❤️ for the open-source hardware community. Special thanks to the 
 ## License
 
 This project is licensed under the Apache-2.0 License.
+
+## Contributing
+
+Most of the components have been vibe-coded to prove that the project is capable of being developed and is useful for teams working on KiCAD projects. I would love to see actual Typescript devs contribute to this project and make it production ready.
