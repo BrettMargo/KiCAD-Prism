@@ -31,7 +31,7 @@ A comprehensive design explorer that renders schematics and PCBs natively in the
 
 Move away from disjointed feedback. Add contextual comments directly on design elements. Comments can be replied to, resolved, and are visualised as pins in the design overlay.
 
-![Comment System Demo](assets/KiCAD-Prism-Comment-Demo.mov)
+![Comment System Demo](assets/KiCAD-Prism-Comment-Demo.mov)  
 *Threaded design reviews with spatial context.*
 
 ### Integrated Documentation & Assets
