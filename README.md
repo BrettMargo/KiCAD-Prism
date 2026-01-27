@@ -107,7 +107,7 @@ git clone https://github.com/krishna-swaroop/KiCAD-Prism.git
 cd KiCAD-Prism
 
 # Start the application (no authentication)
-AUTH_ENABLED=false docker compose up -d
+AUTH_ENABLED=false docker compose up -d --build
 
 # OR: Start with Google OAuth
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com docker compose up -d

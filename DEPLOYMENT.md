@@ -21,8 +21,11 @@ git clone https://github.com/krishna-swaroop/KiCAD-Prism.git
 cd KiCAD-Prism
 
 # 2. Start the platform
-docker compose up -d
+docker compose up -d --build
 ```
+
+> [!TIP]
+> `docker compose up -d` will automatically build the images the first time. Using the `--build` flag ensures that any local changes to the `Dockerfile` or source code are re-built into the images.
 
 Access the UI at: **`http://localhost`**
 
