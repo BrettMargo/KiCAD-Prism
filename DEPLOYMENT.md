@@ -1,350 +1,135 @@
 # Deployment Guide
 
-This guide provides instructions for setting up KiCAD Prism on a new machine.
-
-## Prerequisites
-
-1. **Python 3.10+**: Required for the backend.
-2. **Node.js v18+ & NPM**: Required for the frontend.
-3. **Git**: Required for project management and workflows.
-4. **KiCAD 8.0 or 9.0**: Required for `kicad-cli` workflow execution.
+This guide provides instructions for setting up KiCAD Prism. The **easiest and recommended** way is using Docker.
 
 ---
 
-## 1. Backend Setup (FastAPI)
+## 1. Quick Start: Docker Deployment (Recommended)
 
-Navigate to the `backend` directory:
+Docker packages both the frontend and the backend (with `kicad-cli` v9 pre-installed) into a portable environment. This works on Windows, macOS (including Apple Silicon), and Linux.
 
-```bash
-cd backend
-```
+### Prerequisites
 
-### Create Virtual Environment
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
 
-```bash
-python -m venv venv
-# macOS/Linux:
-source venv/bin/activate
-# Windows:
-venv\Scripts\activate
-```
-
-### Install Dependencies
+### Installation
 
 ```bash
-pip install -r requirements.txt
-```
-
-### Configuration
-
-Copy the example environment file and customize:
-
-```bash
-cp .env.example .env
-```
-
-The backend expects a directory named `project-database` to exist one level ABOVE the repository root:
-
-```bash
-# Example structure:
-# /Users/name/Projects/
-# ├── KiCAD-Prism/       (this repo)
-# └── project-database/  (created by backend or manually)
-```
-
-### Running the Backend
-
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-By default, it runs on `http://localhost:8000`.
-
----
-
-## 2. Frontend Setup (React + Vite)
-
-Navigate to the `frontend` directory:
-
-```bash
-cd frontend
-```
-
-### Install Dependencies
-
-```bash
-npm install
-```
-
-### Configuration
-
-Copy the example environment file and customize:
-
-```bash
-cp .env.example .env
-```
-
-### Running the Frontend
-
-```bash
-npm run dev
-```
-
-By default, it runs on `http://localhost:5173`. Make sure the backend is running so the proxy works.
-
----
-
-## 3. Authentication Setup
-
-KiCAD Prism supports optional Google Sign-in with domain restrictions.
-
-### How to Turn ON Authentication
-
-To enable authentication for your deployment:
-
-1. **Backend**: Set `GOOGLE_CLIENT_ID` in `backend/.env` and set `DEV_MODE=False`.
-2. **Frontend**: Set `VITE_GOOGLE_CLIENT_ID` in `frontend/.env` to match the backend.
-3. **Allowed Domains**: Configure `ALLOWED_DOMAINS_STR` in `backend/.env` with your organization's domains.
-
-Once configured, the system will automatically show the login page and restrict access.
-
-### Configuration Modes
-
-### Option 1: Public Gallery (No Authentication)
-
-The simplest setup - anyone can access the platform without signing in.
-
-**Backend `.env`:**
-
-```bash
-GOOGLE_CLIENT_ID=
-DEV_MODE=True
-```
-
-**Frontend `.env`:**
-
-```bash
-VITE_GOOGLE_CLIENT_ID=
-```
-
-### Option 2: Development Mode
-
-Shows the Google Sign-in button with a "Dev Bypass" option for testing.
-
-**Backend `.env`:**
-
-```bash
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-DEV_MODE=True
-ALLOWED_USERS_STR=user1@pixxel.co.in,user2@pixxel.co.in
-```
-
-**Frontend `.env`:**
-
-```bash
-VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
-
-### Option 3: Production Mode
-
-Full authentication required - only users from allowed domains can access.
-
-**Backend `.env`:**
-
-```bash
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-DEV_MODE=False
-ALLOWED_DOMAINS_STR=pixxel.co.in,spacepixxel.in
-```
-
-**Frontend `.env`:**
-
-```bash
-VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
-
-### Setting Up Google OAuth
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Navigate to **APIs & Services** > **Credentials**
-4. Click **Create Credentials** > **OAuth client ID**
-5. Select **Web application**
-6. Configure authorized JavaScript origins:
-   - Development: `http://localhost:5173`
-   - Production: `https://your-domain.com`
-7. Copy the **Client ID** to both backend and frontend `.env` files
-
-### Managing Allowed Users
-
-To add or remove allowed users, update the `ALLOWED_USERS_STR` variable in the backend `.env`:
-
-```bash
-# Single user
-ALLOWED_USERS_STR=jane@pixxel.co.in
-
-# Multiple users (comma-separated)
-ALLOWED_USERS_STR=jane@pixxel.co.in,bob@gmail.com
-```
-
-> **Note**: The domain is extracted from the user's email. For `user@pixxel.co.in`, the domain is `pixxel.co.in`.
-
----
-
-## 4. Windows-Specific Instructions
-
-If your host server is based on **Windows**, follow these additional steps:
-
-### KiCAD CLI Path
-
-The backend currently searches for `kicad-cli` in a standard macOS path. You may need to update the path in `backend/app/services/project_service.py`:
-
-```python
-# Locate this function in project_service.py
-def _find_cli_path():
-    # macOS path:
-    # mac_path = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
-    
-    # Windows path (example):
-    windows_path = "C:\\Program Files\\KiCad\\9.0\\bin\\kicad-cli.exe"
-    if os.path.exists(windows_path):
-        return windows_path
-    return "kicad-cli"
-```
-
-### Shell Execution
-
-The workflows use `subprocess.Popen`. On Windows, ensure that `git` and `kicad-cli` are available in the System Environment Variables (PATH).
-
-### Git Configuration
-
-For the "Sync" and "Push to Remote" features to work, ensure the machine has Git credentials configured globally or via a credential manager:
-
-```powershell
-git config --global user.name "Your Name"
-git config --global user.email "your.email@example.com"
-```
-
----
-
-## 5. Production Deployment (Recommended)
-
-### Using Docker
-
-The most robust way to deploy KiCAD Prism is via Docker Compose. This packages both the frontend and the backend (with `kicad-cli` v9 pre-installed) into a portable environment.
-
-```bash
+# 1. Clone the repository
+git clone https://github.com/krishna-swaroop/KiCAD-Prism.git
+cd KiCAD-Prism
+
+# 2. Start the platform
 docker compose up -d
 ```
 
-#### Directory Structure for Docker
+Access the UI at: **`http://localhost`**
 
-By default, Docker will create a `data` directory in the repository root to store persistent data:
+### Volume Mapping & Persistence
 
-```text
-KiCAD-Prism/
-├── data/
-│   └── projects/      # Persistent storage for KiCAD repositories
-├── backend/
-├── frontend/
-└── docker-compose.yml
-```
+By default, Docker creates a `data` directory in the repository root to store persistent data:
 
-#### Volume Mapping & Persistence
+- **`./data/projects`**: This is where your KiCAD repositories are stored.
+- **Data Survival**: Your projects remain available even if you stop or update the containers.
+- **Manual Import**: You can drop existing KiCAD projects into `./data/projects` on your host machine, and they will appear in the dashboard.
 
-The `docker-compose.yml` mounts the host's `./data/projects` directory to `/app/projects` inside the backend container. This ensures:
+---
 
-1. **Data Survival**: Your projects remain available even if you stop or update the Docker containers.
-2. **Easy Access**: You can manually drop existing KiCAD projects into `./data/projects` on your host machine, and they will appear in the Prism dashboard after a refresh.
+## 2. Environment Configuration
 
-#### Configuration via .env
-
-You can configure the deployment by creating a `.env` file in the root:
+For Docker deployments, create a `.env` file in the **root directory** of the project.
 
 ```bash
-# Force authentication (True if GOOGLE_CLIENT_ID is set, False otherwise)
+# --- .env (Project Root) ---
+
+# Force authentication toggle (default is true if GOOGLE_CLIENT_ID is provided)
 AUTH_ENABLED=true
 
-# Google OAuth Client ID
+# Google OAuth Configuration
 GOOGLE_CLIENT_ID=your-id.apps.googleusercontent.com
 
-# Allowed user emails/domains
+# Access Control
 ALLOWED_DOMAINS_STR=yourcompany.com
 ALLOWED_USERS_STR=admin@yourcompany.com
 
-# Set to false to disable development bypass buttons
+# Development Mode (set to false for production)
 DEV_MODE=false
 ```
 
-### Reverse Proxy (nginx)
+---
 
-Example nginx configuration:
+## 3. Local Development (Manual Setup)
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
+If you want to contribute to the code or run without Docker, follow these steps.
 
-    location /api {
-        proxy_pass http://localhost:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
+### Prerequisites
 
-    location / {
-        proxy_pass http://localhost:5173;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
+1. **Python 3.10+**
+2. **Node.js v18+ & NPM**
+3. **KiCAD 9.0** (with `kicad-cli` in your PATH)
+
+### Backend Setup
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Create backend .env
+cp .env.example .env
+
+# Run server
+uvicorn app.main:app --reload --port 8000
 ```
+
+### Frontend Setup
+
+```bash
+cd frontend
+npm install
+
+# Create frontend .env
+cp .env.example .env
+
+# Run dev server
+npm run dev
+```
+
+> **Note**: For local development, `.env` files must be placed inside the `backend/` and `frontend/` directories respectively.
 
 ---
 
-## 6. Deploying on Local Network
+## 4. Authentication Setup (Google OAuth)
 
-To access KiCAD Prism from other devices on your local network (e.g., tablets, other computers):
+KiCAD Prism supports optional Google Sign-in with domain restrictions.
 
-### 1. Backend
+### Configuring Google Cloud
 
-Run with host set to `0.0.0.0` to listen on all interfaces:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create an **OAuth 2.0 Client ID** (Web application type)
+3. Add these Authorized JavaScript Origins:
+   - Development: `http://localhost:5173`
+   - Production/Docker: `http://localhost`
+4. Copy the **Client ID** to your `.env` file.
 
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+### Configuration Modes
 
-### 2. Frontend
-
-Run with the `--host` flag:
-
-```bash
-npm run dev -- --host
-```
-
-### 3. Accessing the App
-
-Find your computer's local IP address (e.g., `192.168.1.x`) and access:
-
-- **Frontend**: `http://192.168.1.x:5173`
-- **Backend API**: `http://192.168.1.x:8000`
-
-> **Note**: Ensure your firewall allows incoming connections on port 8000 and 5173.
+| Mode | Behavior | Configuration |
+|------|----------|---------------|
+| **Public Gallery** | No login required | `AUTH_ENABLED=false` |
+| **Development** | Login with "Dev Bypass" | `DEV_MODE=true` |
+| **Production** | Strict Google Login | `DEV_MODE=false` |
 
 ---
 
-## 7. Troubleshooting
+## 5. Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| **CORS Issues** | Check `backend/app/main.py` to ensure the frontend's origin is allowed. |
-| **Git Hangs** | The platform sets `GIT_TERMINAL_PROMPT=0` to prevent hangs. Check if the repository requires authentication. |
-| **Missing Jobsets** | Ensure projects have an `Outputs.kicad_jobset` file for Workflows. |
-| **Auth Config Errors** | Verify both frontend and backend have matching `GOOGLE_CLIENT_ID` values. |
-| **Domain Rejection** | Check that the user's email domain is in `ALLOWED_DOMAINS_STR`. |
-| **Sync Fails** | Ensure the server has read access to the remote repository. |
+| **Docker pull fails** | Check your internet connection and ensure you are using the correct image tag (e.g., `kicad/kicad:9.0.0-arm64` for Mac M1/M2). |
+| **Visual Diff Empty** | Check `docker logs kicad-prism-backend` to ensure `kicad-cli` is running correctly. |
+| **Persistence Issues** | Ensure the `./data/projects` folder has write permissions for the Docker user. |
+| **Auth Rejection** | Verify that `GOOGLE_CLIENT_ID` matches in both backend and frontend configs. |
+| **Sync Fails** | Ensure the server/container has network access to the remote Git repository. |
