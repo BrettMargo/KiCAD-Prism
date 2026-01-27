@@ -11,6 +11,7 @@ import uuid
 import shutil
 import time
 import json
+import re
 from pathlib import Path
 from typing import Optional, List, Dict
 from app.services.project_service import get_registered_projects
@@ -173,7 +174,6 @@ def _get_pcb_layers(pcb_path: Path) -> List[str]:
     # Fallback to standard layers if parsing fails
     return ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "F.Mask", "B.Mask", "Edge.Cuts"]
     
-import re
 
 def _colorize_svg(svg_path: Path, color: str):
     """
@@ -268,10 +268,10 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                 cmd = [
                     CLI_CMD, "sch", "export", "svg",
                     "--black-and-white",
-                    "--no-background-color",
                     "--output", str(sch_out_dir),
                     str(sch_file)
                 ]
+                job['logs'].append(f"SCH CMD: {' '.join(cmd)}")
                 res = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if res.returncode == 0:

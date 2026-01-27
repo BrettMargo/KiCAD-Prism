@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     git \
     software-properties-common \
+    libgl1 \
+    libglu1-mesa \
+    libsm6 \
+    libice6 \
+    libxext6 \
+    libxrender1 \
     && add-apt-repository -y ppa:kicad/kicad-9.0-releases \
     && apt-get update \
     && apt-get install -y --no-install-recommends kicad \
