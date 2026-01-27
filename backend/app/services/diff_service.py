@@ -22,28 +22,63 @@ diff_jobs: Dict[str, dict] = {}
 # Configuration
 MAX_JOB_AGE_SECONDS = 3600 * 24  # 24 hours
 
+import platform
+
 def _get_cli_command() -> str:
-    """Find valid kicad-cli command."""
-    # Check PATH first
-    if shutil.which("kicad-cli"):
-        return "kicad-cli"
+    """Find valid kicad-cli command across different OS platforms."""
+    # 1. Check environment variable override
+    env_path = os.environ.get("KICAD_CLI_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    # 2. Check PATH
+    cli_name = "kicad-cli.exe" if platform.system() == "Windows" else "kicad-cli"
+    if shutil.which(cli_name):
+        return cli_name
     
-    # Check common macOS paths
-    mac_paths = [
-        "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-        "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli", # Duplicate?
-        os.path.expanduser("~/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli")
-    ]
+    # 3. Check common OS-specific installation paths
+    system = platform.system()
+    paths_to_check = []
+
+    if system == "Darwin": # macOS
+        paths_to_check = [
+            "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+            os.path.expanduser("~/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli")
+        ]
+    elif system == "Windows":
+        # Check standard C:\Program Files paths, possibly trying different versions
+        program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+        kicad_root = Path(program_files) / "KiCad"
+        if kicad_root.exists():
+            # Try to find the latest version bin folder
+            # Usually KiCad/8.0/bin/kicad-cli.exe
+            versions = sorted([d for d in kicad_root.iterdir() if d.is_dir()], reverse=True)
+            for v in versions:
+                candidate = v / "bin" / "kicad-cli.exe"
+                if candidate.exists():
+                    paths_to_check.append(str(candidate))
+        
+        # Fallback to direct path if version detection fails
+        paths_to_check.append(f"{program_files}\\KiCad\\8.0\\bin\\kicad-cli.exe")
+        paths_to_check.append(f"{program_files}\\KiCad\\7.0\\bin\\kicad-cli.exe")
+
+    elif system == "Linux":
+        paths_to_check = [
+            "/usr/bin/kicad-cli",
+            "/usr/local/bin/kicad-cli",
+            # Flatpak fallback
+            "/var/lib/flatpak/exports/bin/org.kicad.KiCad" 
+        ]
     
-    for path in mac_paths:
+    for path in paths_to_check:
         if os.path.exists(path):
             return path
             
-    # Fallback (will likely fail if not found)
-    return "kicad-cli"
+    # Fallback to default name
+    return cli_name
 
 CLI_CMD = _get_cli_command()
-print(f"Resolved kicad-cli: {CLI_CMD}")
+print(f"[{platform.system()}] Resolved kicad-cli: {CLI_CMD}")
 
 
 def _find_kicad_pro_file(directory: Path) -> Optional[Path]:
