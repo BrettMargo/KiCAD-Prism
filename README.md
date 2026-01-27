@@ -103,7 +103,7 @@ The easiest way to run KiCAD Prism is with Docker. This works on any machine wit
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/KiCAD-Prism.git
+git clone https://github.com/krishna-swaroop/KiCAD-Prism.git
 cd KiCAD-Prism
 
 # Start the application (no authentication)

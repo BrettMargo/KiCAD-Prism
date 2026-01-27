@@ -1,16 +1,27 @@
 # Backend Dockerfile
-FROM python:3.11-slim
+# Using Ubuntu to install KiCad from official PPA for cross-platform support
+FROM ubuntu:24.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install system dependencies for git operations
+# Install system dependencies, Python, and KiCad
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
     git \
+    software-properties-common \
+    && add-apt-repository -y ppa:kicad/kicad-9.0-releases \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends kicad \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -19,4 +30,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the application, binding to all interfaces for LAN access
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

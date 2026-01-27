@@ -14,12 +14,12 @@ class Project(BaseModel):
     last_modified: str
     thumbnail_url: Optional[str] = None
 
-# Hardcoded for now, as per plan
-# Projects stored in 'project-database' sibling to 'KiCAD-Prism'
-PROJECTS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../project-database"))
+# PROJECTS_ROOT is where imported projects are stored.
+# In Docker, this should be a persistent volume mount.
+PROJECTS_ROOT = os.environ.get("KICAD_PROJECTS_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../project-database")))
 
 if not os.path.exists(PROJECTS_ROOT):
-    os.makedirs(PROJECTS_ROOT)
+    os.makedirs(PROJECTS_ROOT, exist_ok=True)
 
 def get_registered_projects() -> List[Project]:
     """
