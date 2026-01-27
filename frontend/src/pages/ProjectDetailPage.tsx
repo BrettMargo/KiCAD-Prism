@@ -41,6 +41,7 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
     const [syncing, setSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
     const [visualizerLoaded, setVisualizerLoaded] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         if (activeSection === 'visualizers') {
@@ -72,8 +73,8 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
             if (response.ok) {
                 const data = await response.json();
                 setSyncMessage(data.message);
-                // Refresh project data and readme
-                window.location.reload();
+                // Refresh project data and readme without full reload
+                setRefreshKey(prev => prev + 1);
             } else {
                 const error = await response.json();
                 setSyncMessage(`Sync failed: ${error.detail}`);
@@ -118,7 +119,7 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
             fetchProject();
             fetchReadme();
         }
-    }, [projectId, currentCommit]);
+    }, [projectId, currentCommit, refreshKey]);
 
     // Calculate commits behind when viewing specific commit
     useEffect(() => {
@@ -375,7 +376,7 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
                     {activeSection === "history" && (
                         <div>
                             <h2 className="text-2xl font-bold mb-6">History</h2>
-                            {projectId && <HistoryViewer projectId={projectId} onViewCommit={handleViewCommit} />}
+                            {projectId && <HistoryViewer key={refreshKey} projectId={projectId} onViewCommit={handleViewCommit} />}
                         </div>
                     )}
 

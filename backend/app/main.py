@@ -4,6 +4,7 @@ from app.services.git_service import router as git_router
 from app.api.auth import router as auth_router
 from app.api.projects import router as projects_router
 from app.api.comments import router as comments_router
+from app.api.diff import router as diff_router
 
 app = FastAPI(title="KiCAD Prism API")
 
@@ -21,6 +22,7 @@ app.include_router(git_router, prefix="/api/git", tags=["git"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
 app.include_router(comments_router, prefix="/api/projects", tags=["comments"])
+app.include_router(diff_router, prefix="/api/projects", tags=["diff"])
 
 @app.get("/")
 async def root():

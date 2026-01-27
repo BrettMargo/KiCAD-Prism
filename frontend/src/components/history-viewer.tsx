@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { GitCommit, Tag, Calendar, User, Clock, Copy, Eye, Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { VisualDiffViewer } from "./visual-diff-viewer";
 
 interface Release {
     tag: string;
@@ -38,7 +39,14 @@ function formatDate(isoDate: string): string {
     return date.toLocaleDateString();
 }
 
-function CommitItem({ commit, onViewCommit }: { commit: Commit; onViewCommit: (hash: string) => void }) {
+interface CommitItemProps {
+    commit: Commit;
+    onViewCommit: (hash: string) => void;
+    isSelected: boolean;
+    onSelect: () => void;
+}
+
+function CommitItem({ commit, onViewCommit, isSelected, onSelect }: CommitItemProps) {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
@@ -48,15 +56,20 @@ function CommitItem({ commit, onViewCommit }: { commit: Commit; onViewCommit: (h
     };
 
     return (
-        <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+        <div className={`border rounded-lg p-4 transition-colors ${isSelected ? 'bg-primary/5 border-primary/50' : 'hover:bg-muted/50'}`}>
             <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-1">
-                    <GitCommit className="h-4 w-4 text-muted-foreground" />
+                <div className="flex-shrink-0 mt-1 flex items-center justify-center">
+                    <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={onSelect}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                    />
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4 mb-2">
                         <p className="text-sm font-medium leading-relaxed">
-                            {commit.message.split('\n')[0]}
+                            {(commit.message || "").split('\n')[0]}
                         </p>
                         <div className="flex items-center gap-1 flex-shrink-0">
                             <code className="text-xs bg-muted px-2 py-1 rounded">
@@ -89,7 +102,7 @@ function CommitItem({ commit, onViewCommit }: { commit: Commit; onViewCommit: (h
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1">
                             <User className="h-3 w-3" />
-                            {commit.author}
+                            {commit.author || "Unknown"}
                         </div>
                         <div className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
@@ -106,6 +119,45 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
     const [releases, setReleases] = useState<Release[]>([]);
     const [commits, setCommits] = useState<Commit[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
+    const [showDiff, setShowDiff] = useState(false);
+
+    // Filter commits to find selected ones and determining newer/older
+    const getSortedSelectedCommits = () => {
+        if (selectedCommits.length !== 2) return null;
+
+        // Commits are already sorted by date (newest first)
+        const c1Index = commits.findIndex(c => c.full_hash === selectedCommits[0]);
+        const c2Index = commits.findIndex(c => c.full_hash === selectedCommits[1]);
+
+        if (c1Index === -1 || c2Index === -1) return null;
+
+        // Smaller index = Newer commit
+        const newerIndex = Math.min(c1Index, c2Index);
+        const olderIndex = Math.max(c1Index, c2Index);
+
+        return {
+            newer: commits[newerIndex],
+            older: commits[olderIndex]
+        };
+    };
+
+    const handleSelectCommit = (hash: string) => {
+        setSelectedCommits(prev => {
+            if (prev.includes(hash)) {
+                return prev.filter(h => h !== hash);
+            }
+            if (prev.length >= 2) {
+                // Remove oldest selection (first one added? or just FIFO)
+                // Let's just create a new array with the new one
+                const [_, second] = prev;
+                return [second, hash];
+            }
+            return [...prev, hash];
+        });
+    };
+
+    const diffPair = getSortedSelectedCommits();
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -144,6 +196,16 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
 
     return (
         <div className="space-y-8">
+            {/* Visual Diff Viewer */}
+            {showDiff && diffPair && (
+                <VisualDiffViewer
+                    projectId={projectId}
+                    commit1={diffPair.newer.full_hash}
+                    commit2={diffPair.older.full_hash}
+                    onClose={() => setShowDiff(false)}
+                />
+            )}
+
             {/* Releases Section */}
             {releases.length > 0 && (
                 <div className="space-y-4">
@@ -167,7 +229,7 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
                                     </code>
                                 </div>
                                 <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
-                                    {release.message}
+                                    {release.message || "No description"}
                                 </p>
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                     <Calendar className="h-3 w-3" />
@@ -181,10 +243,23 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
 
             {/* Commits Section */}
             <div className="space-y-4">
-                <h3 className="text-xl font-semibold flex items-center gap-2">
-                    <GitCommit className="h-5 w-5" />
-                    Commits
-                </h3>
+                <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-semibold flex items-center gap-2">
+                        <GitCommit className="h-5 w-5" />
+                        Commits
+                    </h3>
+                    {selectedCommits.length === 2 && (
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => setShowDiff(true)}
+                        >
+                            <Eye className="h-4 w-4 mr-2" />
+                            Compare Selected ({selectedCommits.length})
+                        </Button>
+                    )}
+                </div>
+
                 {commits.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-8">
                         No commits found
@@ -196,6 +271,8 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
                                 key={commit.full_hash}
                                 commit={commit}
                                 onViewCommit={onViewCommit}
+                                isSelected={selectedCommits.includes(commit.full_hash)}
+                                onSelect={() => handleSelectCommit(commit.full_hash)}
                             />
                         ))}
                     </div>
