@@ -70,9 +70,17 @@ def _cleanup_job(job_id: str):
     """Remove a job directory and entry."""
     if job_id in diff_jobs:
         job = diff_jobs[job_id]
+        if job.get('status') == 'running':
+            # Don't delete running jobs to avoid race conditions with tar/kicad-cli
+            job['status'] = 'failed'
+            job['error'] = 'Job cancelled by user'
+            return
+
         output_dir = job.get('abs_output_path')
         if output_dir and os.path.exists(output_dir):
             try:
+                # Give background threads a moment to finish current syscalls
+                time.sleep(0.5) 
                 shutil.rmtree(output_dir)
             except Exception as e:
                 print(f"Error cleaning up job {job_id}: {e}")
@@ -100,30 +108,35 @@ def _snapshot_commit(project_path: Path, commit: str, destination: Path):
 
 def _get_pcb_layers(pcb_path: Path) -> List[str]:
     """
-    Return comprehensive list of potential layers.
-    KiCad CLI typically ignores layers that are empty/invalid for export.
+    Extract active layer names from the .kicad_pcb file.
     """
-    layers = [
-        # Copper
-        "F.Cu", "B.Cu",
-        # Technical
-        "F.SilkS", "B.SilkS", 
-        "F.Mask", "B.Mask", 
-        "Edge.Cuts",
-        "F.Paste", "B.Paste",
-        # User / Fab / Assembly
-        "F.Fab", "B.Fab",
-        "F.CrtYd", "B.CrtYd",
-        "F.Adhes", "B.Adhes",
-        "User.Drawings", "User.Comments", "User.Eco1", "User.Eco2",
-        "Dwgs.User", "Cmts.User", "Eco1.User", "Eco2.User", # Legacy names just in case
-        "Margin"
-    ]
-    # Add Inner layers 1-30 just in case
-    for i in range(1, 31):
-        layers.append(f"In{i}.Cu")
+    if not pcb_path.exists():
+        return []
         
-    return layers
+    try:
+        # Read the beginning of the file to find the layers block
+        # PCB files can be large, but the layers block is usually within the first 10k bytes
+        with open(pcb_path, 'r', encoding='utf-8', errors='ignore') as f:
+            head = f.read(20000)
+            
+        # Find the layers section: (layers ... (count "name" type ...) ...)
+        layers_match = re.search(r'\(layers\s+(.*?)\s+\(setup', head, re.DOTALL)
+        if not layers_match:
+            # Fallback to a broader search if setup block isn't immediately after
+            layers_match = re.search(r'\(layers\s+(.*?)\n\s+\)', head, re.DOTALL)
+            
+        if layers_match:
+            block = layers_match.group(1)
+            # Find all strings in quotes: e.g. (0 "F.Cu" signal)
+            layer_names = re.findall(r'"([^"]+)"', block)
+            if layer_names:
+                return layer_names
+                
+    except Exception as e:
+        print(f"Error parsing PCB layers: {e}")
+        
+    # Fallback to standard layers if parsing fails
+    return ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "F.Mask", "B.Mask", "Edge.Cuts"]
     
 import re
 
@@ -207,28 +220,16 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
         COLOR_OLD = "#FF0000"
         
         for commit, directory, color in [(commit1, c1_dir, COLOR_NEW), (commit2, c2_dir, COLOR_OLD)]:
-            # Recursive find for .kicad_pro (optional support)
-            pro_file = next(directory.rglob("*.kicad_pro"), None)
-            
-            # Recursive find for .kicad_sch
+            # 1. Locate design files
             sch_file = next(directory.rglob("*.kicad_sch"), None)
-            
-            # Recursive find for .kicad_pcb
             pcb_file = next(directory.rglob("*.kicad_pcb"), None)
             
-            if not sch_file and not pcb_file:
-                job['logs'].append(f"No KiCad design files found in {commit} snapshot")
-                continue
-            
-            # Export Schematics
+            # 2. Export Schematics
             if sch_file:
                 sch_out_dir = directory / "sch"
                 sch_out_dir.mkdir(exist_ok=True)
-                
-                manifest["schematic"] = True
                 job['logs'].append(f"Exporting Schematics for {commit}...")
                 
-                # Removed --all, assuming default behavior is all pages
                 cmd = [
                     CLI_CMD, "sch", "export", "svg",
                     "--black-and-white",
@@ -236,70 +237,82 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                     "--output", str(sch_out_dir),
                     str(sch_file)
                 ]
-                job['logs'].append(f"CMD: {' '.join(cmd)}")
                 res = subprocess.run(cmd, capture_output=True, text=True)
                 
-                if res.returncode != 0:
-                    job['logs'].append(f"SCH Export Failed (Code {res.returncode})")
-                    job['logs'].append(f"STDOUT: {res.stdout}")
-                    job['logs'].append(f"STDERR: {res.stderr}")
-                else:
-                    # Colorize
+                if res.returncode == 0:
                     for svg in sch_out_dir.glob("*.svg"):
                         _colorize_svg(svg, color)
-
-                    # Populate sheets list if this is the NEW commit (commit1)
+                    
                     if commit == commit1:
-                        sheets = sorted([f.name for f in sch_out_dir.glob("*.svg")])
-                        manifest["sheets"] = sheets
+                        manifest["schematic"] = True
+                        manifest["sheets"] = sorted([f.name for f in sch_out_dir.glob("*.svg")])
             
-            # Export PCB
+            # 3. Export PCB Layers
             if pcb_file:
                 pcb_out_dir = directory / "pcb"
                 pcb_out_dir.mkdir(exist_ok=True)
+                job['logs'].append(f"Exporting PCB Layers for {commit} from {pcb_file}...")
                 
-                manifest["pcb"] = True
-                job['logs'].append(f"Exporting PCB Layers for {commit}...")
+                # We export standard layers in one shot using --mode-multi
+                all_layers = _get_pcb_layers(pcb_file)
+                cmd = [
+                    CLI_CMD, "pcb", "export", "svg",
+                    "--mode-multi",
+                    "--layers", ",".join(all_layers),
+                    "--black-and-white",
+                    "--exclude-drawing-sheet",
+                    "--page-size-mode", "2",
+                    "--output", str(pcb_out_dir),
+                    str(pcb_file)
+                ]
+                job['logs'].append(f"PCB CMD: {' '.join(cmd)}")
+                res = subprocess.run(cmd, capture_output=True, text=True)
                 
-                # Standard KiCad layers
-                layers = _get_pcb_layers(pcb_file)
-                exported = []
-                
-                for layer in layers:
-                    # Target filename e.g. F_Cu.svg
-                    safe_layer_name = layer.replace('.', '_')
-                    output_file = pcb_out_dir / f"{safe_layer_name}.svg"
+                if res.returncode == 0:
+                    # KiCad names these {project}-{layer}.svg or just {layer}.svg
+                    # We normalize them to {layer_name}.svg for the frontend
+                    found_layers = []
+                    job['logs'].append(f"PCB Export success. Dir content: {list(pcb_out_dir.glob('*.svg'))}")
                     
-                    cmd = [
-                        CLI_CMD, "pcb", "export", "svg",
-                        "--layers", layer,
-                        "--black-and-white",
-                        "--no-background-color",
-                        "--exclude-drawing-sheet",
-                        "--page-size-mode", "2",
-                        "--output", str(output_file),
-                        str(pcb_file)
-                    ]
+                    for svg in list(pcb_out_dir.glob("*.svg")):
+                        leaf = svg.name
+                        layer_part = leaf
+                        if leaf.startswith(pcb_file.stem + "-"):
+                            layer_part = leaf[len(pcb_file.stem)+1:]
+                        
+                        # Match back to the original layer name to ensure F.Cu vs F_Cu consistency
+                        matched_layer = None
+                        for l in all_layers:
+                            if l.replace(".", "_") == layer_part.replace(".svg", ""):
+                                matched_layer = l
+                                break
+                        
+                        if matched_layer:
+                            target_svg = pcb_out_dir / (matched_layer.replace(".", "_") + ".svg")
+                            job['logs'].append(f"Matched {leaf} -> {matched_layer} (Target: {target_svg.name})")
+                            if svg.resolve() != target_svg.resolve():
+                                if target_svg.exists(): target_svg.unlink()
+                                svg.rename(target_svg)
+                            
+                            _colorize_svg(target_svg, color)
+                            found_layers.append(matched_layer)
+                        else:
+                            job['logs'].append(f"Could not match PCB SVG: {leaf}")
                     
-                    res = subprocess.run(cmd, capture_output=True, text=True)
-                    if res.returncode == 0 and output_file.exists():
-                        _colorize_svg(output_file, color)
-                        exported.append(layer)
-                    # We don't log every failure/skip to keep logs clean
-                
-                if commit == commit1:
-                    manifest["layers"] = exported
+                    if commit == commit1:
+                        manifest["layers"] = sorted(list(set(found_layers)))
+                        job['logs'].append(f"Populated manifest with {len(manifest['layers'])} layers")
+                else:
+                    job['logs'].append(f"PCB Export FAILED (Code {res.returncode})")
+                    job['logs'].append(f"STDERR: {res.stderr}")
             else:
                 job['logs'].append(f"No .kicad_pcb found for {commit}")
 
-        # DEBUG: Final file listing
-        job['logs'].append("Final Job Directory Structure:")
-        for root, dirs, files in os.walk(job_dir):
-            for file in files:
-                job['logs'].append(os.path.join(root, file))
-
-
         # Write manifest
+        # Write logs and manifest
+        log_path = job_dir / "logs.txt"
+        log_path.write_text("\n".join(job['logs']), encoding="utf-8")
+
         with open(job_dir / "manifest.json", "w") as f:
             json.dump(manifest, f, indent=2)
 
@@ -307,11 +320,14 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
         job['message'] = 'Ready'
         job['percent'] = 100
         job['logs'].append("Diff generation complete.")
+        log_path.write_text("\n".join(job['logs']), encoding="utf-8")
 
     except Exception as e:
         job['status'] = 'failed'
         job['error'] = str(e)
         job['logs'].append(f"Critical Error: {str(e)}")
+        if 'job_dir' in locals() and job_dir.exists():
+            (job_dir / "logs.txt").write_text("\n".join(job['logs']), encoding="utf-8")
 
 
 def start_diff_job(project_id: str, commit1: str, commit2: str) -> str:
