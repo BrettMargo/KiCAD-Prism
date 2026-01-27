@@ -115,6 +115,20 @@ GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com docker compose up -d
 # Access the UI at http://localhost
 ```
 
+#### Persistence & Data
+
+By default, the Docker setup creates a `./data` folder in the project root:
+
+- `./data/projects`: This is where your KiCAD projects are stored and managed.
+- Files here will persist across `docker compose down` or container updates.
+
+#### Switching Authentication
+
+Authentication is enabled by default in the Docker image but requires a `GOOGLE_CLIENT_ID`.
+
+- **To Disable**: Set `AUTH_ENABLED=false` in your `.env`.
+- **To Enable**: Set `GOOGLE_CLIENT_ID=...` and ensure `AUTH_ENABLED=true` (the default).
+
 To stop: `docker compose down`
 
 #### Setting Up Google OAuth for Docker
@@ -188,9 +202,9 @@ KiCAD-Prism/
 - [x] High-performance Schematic & PCB Viewers
 - [x] Collaborative Threaded Design Review
 - [x] Automated Workflow Generation
+- [x] Visual Git Diff (Native kicad-cli integration)
 - [ ] Fix page transition logic completely
 - [ ] KiCAD Plugin to overlay comments on the schematic and PCB editors
-- [ ] Visual Git Diff (integrating [Kiri](https://github.com/leoheck/kiri))
 - [ ] User Permissions & Role-Based Access
 - [ ] Real-time Collaboration (WebSockets)
 

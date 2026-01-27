@@ -227,32 +227,53 @@ git config --global user.email "your.email@example.com"
 
 ---
 
-## 5. Production Deployment
+## 5. Production Deployment (Recommended)
 
-### Using Docker (Recommended)
+### Using Docker
 
-A `docker-compose.yml` for production deployment:
+The most robust way to deploy KiCAD Prism is via Docker Compose. This packages both the frontend and the backend (with `kicad-cli` v9 pre-installed) into a portable environment.
 
-```yaml
-version: '3.8'
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    environment:
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - ALLOWED_DOMAINS_STR=${ALLOWED_DOMAINS_STR}
-      - DEV_MODE=False
-    volumes:
-      - ./project-database:/app/project-database
+```bash
+docker compose up -d
+```
 
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:80"
-    environment:
-      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
+#### Directory Structure for Docker
+
+By default, Docker will create a `data` directory in the repository root to store persistent data:
+
+```text
+KiCAD-Prism/
+├── data/
+│   └── projects/      # Persistent storage for KiCAD repositories
+├── backend/
+├── frontend/
+└── docker-compose.yml
+```
+
+#### Volume Mapping & Persistence
+
+The `docker-compose.yml` mounts the host's `./data/projects` directory to `/app/projects` inside the backend container. This ensures:
+
+1. **Data Survival**: Your projects remain available even if you stop or update the Docker containers.
+2. **Easy Access**: You can manually drop existing KiCAD projects into `./data/projects` on your host machine, and they will appear in the Prism dashboard after a refresh.
+
+#### Configuration via .env
+
+You can configure the deployment by creating a `.env` file in the root:
+
+```bash
+# Force authentication (True if GOOGLE_CLIENT_ID is set, False otherwise)
+AUTH_ENABLED=true
+
+# Google OAuth Client ID
+GOOGLE_CLIENT_ID=your-id.apps.googleusercontent.com
+
+# Allowed user emails/domains
+ALLOWED_DOMAINS_STR=yourcompany.com
+ALLOWED_USERS_STR=admin@yourcompany.com
+
+# Set to false to disable development bypass buttons
+DEV_MODE=false
 ```
 
 ### Reverse Proxy (nginx)
