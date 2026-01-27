@@ -1,6 +1,11 @@
 # Backend Dockerfile
-# Using official KiCad image with ARM64 support
-FROM kicad/kicad:9.0.0-arm64
+# Multi-architecture support for KiCad 9
+ARG TARGETARCH
+FROM kicad/kicad:9.0.7-amd64 AS base-amd64
+FROM kicad/kicad:9.0.0-arm64 AS base-arm64
+
+# Use the appropriate base based on the target architecture
+FROM base-${TARGETARCH}
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
