@@ -230,9 +230,10 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
             "commit2": commit2,
             "schematic": True,
             "pcb": True,
-            "sheets": [],
-            "layers": []
         }
+        
+        print(f"DEBUG: Starting diff for project {project_id} (Commits: {commit1} vs {commit2})")
+        print(f"DEBUG: Job Dir: {job_dir}")
         
         # 1. Snapshot commits
         c1_dir = job_dir / commit1
@@ -272,15 +273,22 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                     str(sch_file)
                 ]
                 job['logs'].append(f"SCH CMD: {' '.join(cmd)}")
+                print(f"DEBUG: Running SCH CMD: {' '.join(cmd)}")
                 res = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if res.returncode == 0:
-                    for svg in sch_out_dir.glob("*.svg"):
+                    found_svgs = list(sch_out_dir.glob("*.svg"))
+                    print(f"DEBUG: SCH Export success. Found {len(found_svgs)} SVGs")
+                    for svg in found_svgs:
                         _colorize_svg(svg, color)
                     
                     if commit == commit1:
                         manifest["schematic"] = True
-                        manifest["sheets"] = sorted([f.name for f in sch_out_dir.glob("*.svg")])
+                        manifest["sheets"] = sorted([f.name for f in found_svgs])
+                else:
+                    print(f"DEBUG: SCH Export FAILED (Code {res.returncode})")
+                    print(f"DEBUG: STDERR: {res.stderr}")
+                    print(f"DEBUG: STDOUT: {res.stdout}")
             
             # 3. Export PCB Layers
             if pcb_file:
@@ -301,6 +309,7 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                     str(pcb_file)
                 ]
                 job['logs'].append(f"PCB CMD: {' '.join(cmd)}")
+                print(f"DEBUG: Running PCB CMD: {' '.join(cmd)}")
                 res = subprocess.run(cmd, capture_output=True, text=True)
                 
                 if res.returncode == 0:
@@ -338,9 +347,13 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                         manifest["layers"] = sorted(list(set(found_layers)))
                         job['logs'].append(f"Populated manifest with {len(manifest['layers'])} layers")
                 else:
+                    print(f"DEBUG: PCB Export FAILED (Code {res.returncode})")
+                    print(f"DEBUG: STDERR: {res.stderr}")
+                    print(f"DEBUG: STDOUT: {res.stdout}")
                     job['logs'].append(f"PCB Export FAILED (Code {res.returncode})")
                     job['logs'].append(f"STDERR: {res.stderr}")
             else:
+                print(f"DEBUG: No .kicad_pcb found for {commit}")
                 job['logs'].append(f"No .kicad_pcb found for {commit}")
 
         # Write manifest
