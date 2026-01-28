@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     )
     
     # ===========================================
+    # Git & GitHub Integration
+    # ===========================================
+    GITHUB_TOKEN: str = Field(
+        default="",
+        description="GitHub Personal Access Token for private repository access."
+    )
+    
+    # ===========================================
     # Computed Properties
     # ===========================================
     @property

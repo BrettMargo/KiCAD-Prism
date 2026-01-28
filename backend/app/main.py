@@ -5,8 +5,32 @@ from app.api.auth import router as auth_router
 from app.api.projects import router as projects_router
 from app.api.comments import router as comments_router
 from app.api.diff import router as diff_router
+from app.core.config import settings
+import subprocess
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="KiCAD Prism API")
+def configure_git():
+    """Configure Git with GITHUB_TOKEN if available."""
+    if settings.GITHUB_TOKEN:
+        print(f"Configuring Git to use GITHUB_TOKEN...")
+        try:
+            # git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+            token_url = f"https://{settings.GITHUB_TOKEN}@github.com/"
+            subprocess.run(
+                ["git", "config", "--global", f"url.{token_url}.insteadOf", "https://github.com/"],
+                check=True
+            )
+            print("Git successfully configured with token injection.")
+        except Exception as e:
+            print(f"Failed to configure Git with token: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    configure_git()
+    yield
+
+app = FastAPI(title="KiCAD Prism API", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(

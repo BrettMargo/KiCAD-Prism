@@ -58,7 +58,22 @@ ALLOWED_USERS_STR=admin@yourcompany.com
 
 # Development Mode (set to false for production)
 DEV_MODE=false
+
+# --- Private Repository Access ---
+# Optional: Provide a GitHub PAT to allow the UI to Sync/Push/Import private repos.
+GITHUB_TOKEN=ghp_your_token_here
 ```
+
+### Accessing Private/Organizational Repos
+
+If you need KiCAD Prism to interact with private repositories:
+
+1. Generate a **Personal Access Token (classic)** on GitHub with the `repo` scope.
+2. If using an Organizational repo, ensure you click **"Configure SSO"** next to the token and authorize your organization.
+3. Add the token to your `.env` as shown above.
+4. Restart your containers: `docker compose up -d`.
+
+The backend will automatically configure Git to use this token for all `https://github.com` operations.
 
 ---
 

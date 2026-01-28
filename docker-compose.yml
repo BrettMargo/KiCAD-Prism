@@ -19,6 +19,8 @@ services:
       - AUTH_ENABLED=${AUTH_ENABLED:-true}
       # Development mode (set to false for production/bundling)
       - DEV_MODE=false
+      # GitHub Token for private repository access (optional)
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
 
   frontend:
     build: ./frontend
