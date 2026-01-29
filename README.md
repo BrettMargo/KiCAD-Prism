@@ -1,6 +1,6 @@
 # KiCAD Prism
 
-KiCAD Prism is a modern, high-performance web-based platform designed for visualizing, reviewing, and managing KiCAD projects. It bridges the gap between desktop EDA and collaborative cloud-native engineering by providing real-time design exploration, threaded design reviews, and automated manufacturing workflows.
+KiCAD Prism is a modern, high-performance web-based platform designed for visualizing, reviewing, and managing KiCAD projects. It bridges the gap between desktop EDA and collaborative web-native engineering by providing real-time design exploration, threaded design reviews, and automated manufacturing workflows.
 
 ![KiCAD Prism Home Page](assets/KiCAD-Prism-Home-Page.png)
 
