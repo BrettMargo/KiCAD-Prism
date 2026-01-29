@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Optional, List, Dict
 from app.services.project_service import get_registered_projects
+from app.services import bom_diff_service
 
 # Global job store
 # Structure: { job_id: { ... } }
@@ -230,8 +231,19 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
             "commit2": commit2,
             "schematic": True,
             "pcb": True,
+            "bom": None,
         }
         
+        # Load Config from Commit 1 (New) if exists
+        def get_config(directory: Path):
+            config_path = directory / ".prism.json"
+            if config_path.exists():
+                try:
+                    return json.loads(config_path.read_text(encoding="utf-8"))
+                except Exception as e:
+                    job['logs'].append(f"Warning: Failed to parse .prism.json: {e}")
+            return {}
+
         # 1. Snapshot commits
         c1_dir = job_dir / commit1
         c2_dir = job_dir / commit2
@@ -343,6 +355,41 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                     job['logs'].append(f"STDERR: {res.stderr}")
             else:
                 job['logs'].append(f"No .kicad_pcb found for {commit}")
+
+        # 4. BoM Diff
+        job['logs'].append("Generating BoM Diff...")
+        try:
+            config = get_config(c1_dir)
+            bom_fields = config.get("bom", {}).get("fields", ["Reference", "Value", "Footprint", "Datasheet"])
+            
+            bom_csvs = {}
+            for commit, directory in [(commit1, c1_dir), (commit2, c2_dir)]:
+                sch_file = next(directory.rglob("*.kicad_sch"), None)
+                if sch_file:
+                    csv_path = directory / "bom.csv"
+                    cmd = [
+                        CLI_CMD, "sch", "export", "bom",
+                        "--fields", ",".join(bom_fields),
+                        "--output", str(csv_path),
+                        str(sch_file)
+                    ]
+                    res = subprocess.run(cmd, capture_output=True, text=True)
+                    if res.returncode == 0 and csv_path.exists():
+                        bom_csvs[commit] = csv_path.read_text(encoding="utf-8")
+                    else:
+                        job['logs'].append(f"BoM export failed for {commit}: {res.stderr}")
+            
+            if commit1 in bom_csvs and commit2 in bom_csvs:
+                old_bom = bom_diff_service.parse_bom_csv(bom_csvs[commit2])
+                new_bom = bom_diff_service.parse_bom_csv(bom_csvs[commit1])
+                diff_results = bom_diff_service.diff_boms(old_bom, new_bom, bom_fields)
+                manifest["bom"] = diff_results
+                job['logs'].append("BoM Diff generated successfully.")
+            else:
+                job['logs'].append("Skipping BoM Diff: Could not generate CSVs for both commits.")
+                
+        except Exception as e:
+            job['logs'].append(f"Error generating BoM diff: {e}")
 
         # Write manifest
         # Write logs and manifest
