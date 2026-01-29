@@ -60,6 +60,24 @@ Pressing the Push Comments button will push the latest files in the backend to t
 
 *Threaded design reviews with spatial context.*
 
+### Visual Diff & Design Comparison
+
+Track design changes across commits with native support for Schematics, PCBs, and Bill of Materials. Powered by `kicad-cli`, KiCAD Prism generates visual and structural diffs that highlight exactly what was added, removed, or modified.
+
+- **Visual Comparison**: Toggle between schematic sheets or PCB layers with an opacity-controlled overlay to spot subtle layout shifts.
+- **Asymmetric BoM Diff**: Compare component lists across commits with status-based filtering (Added/Removed/Changed) and support for custom project-level fields via `.prism.json`.
+
+<p align="center">
+  <img src="assets/Visual-Diff-GIF.gif" width="49%" alt="Schematic Visual Diff">
+  <img src="assets/Visual-Diff-PCB-GIF.gif" width="49%" alt="PCB Visual Diff">
+</p>
+
+<p align="center">
+  <img src="assets/Visual-Diff-BoM.gif" width="80%" alt="BoM Structural Diff">
+</p>
+
+*Visual and structural diffing of design and manufacturing data.*
+
 ### Integrated Documentation & Assets
 
 Explore design and manufacturing outputs through a specialized assets portal. View project specifications and logs with native markdown support and embedded image handling.
