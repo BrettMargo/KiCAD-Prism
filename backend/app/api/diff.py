@@ -12,12 +12,13 @@ router = APIRouter()
 class DiffRequest(BaseModel):
     commit1: str
     commit2: str
+    advanced: bool = False
 
 @router.post("/{project_id}/diff")
 async def start_diff(project_id: str, request: DiffRequest):
     """Start a visual diff job."""
     try:
-        job_id = diff_service.start_diff_job(project_id, request.commit1, request.commit2)
+        job_id = diff_service.start_diff_job(project_id, request.commit1, request.commit2, request.advanced)
         return {"job_id": job_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -35,6 +36,28 @@ async def get_manifest(project_id: str, job_id: str):
     if not manifest:
         raise HTTPException(status_code=404, detail="Manifest not found or job not complete")
     return manifest
+
+@router.get("/{project_id}/diff/{job_id}/advanced/sch")
+async def get_advanced_sch(project_id: str, job_id: str):
+    manifest = diff_service.get_manifest(job_id)
+    if not manifest or "advanced_sch" not in manifest:
+        raise HTTPException(status_code=404, detail="Advanced schematic not found")
+    
+    file_path = diff_service.get_asset_path(job_id, manifest["advanced_sch"])
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(file_path)
+
+@router.get("/{project_id}/diff/{job_id}/advanced/pcb")
+async def get_advanced_pcb(project_id: str, job_id: str):
+    manifest = diff_service.get_manifest(job_id)
+    if not manifest or "advanced_pcb" not in manifest:
+        raise HTTPException(status_code=404, detail="Advanced PCB not found")
+    
+    file_path = diff_service.get_asset_path(job_id, manifest["advanced_pcb"])
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(file_path)
 
 @router.get("/{project_id}/diff/{job_id}/assets/{path:path}")
 async def get_asset(project_id: str, job_id: str, path: str):

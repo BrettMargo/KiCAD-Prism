@@ -4,11 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import * as React from "react";
+
+// Wrapper to inject content via property instead of attribute to avoid size limits/parsing
+const EcadBlobWrapper = ({ filename, content }: { filename: string, content: string }) => {
+    const ref = React.useRef<HTMLElement>(null);
+
+    React.useLayoutEffect(() => {
+        if (ref.current) {
+            (ref.current as any).content = content;
+            (ref.current as any).filename = filename;
+        }
+    }, [filename, content]);
+
+    return <ecad-blob ref={ref} filename={filename} />;
+};
 
 interface VisualDiffViewerProps {
     projectId: string;
     commit1: string;  // Newer commit
     commit2: string;  // Older commit
+    advanced?: boolean;
     onClose: () => void;
 }
 
@@ -26,6 +42,8 @@ interface DiffManifest {
     commit2: string;
     schematic: boolean;
     pcb: boolean;
+    advanced_sch?: any;
+    advanced_pcb?: any;
     sheets: string[]; // filenames
     layers: string[]; // layer names like F.Cu
     bom: {
@@ -41,7 +59,7 @@ interface DiffManifest {
     } | null;
 }
 
-export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: VisualDiffViewerProps) {
+export function VisualDiffViewer({ projectId, commit1, commit2, advanced, onClose }: VisualDiffViewerProps) {
     const [jobId, setJobId] = useState<string | null>(null);
     const [status, setStatus] = useState<DiffJobStatus | null>(null);
     const [manifest, setManifest] = useState<DiffManifest | null>(null);
@@ -52,6 +70,12 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
     const [selectedSheet, setSelectedSheet] = useState<string>("");
     const [selectedLayer, setSelectedLayer] = useState<string>("");
     const [opacity, setOpacity] = useState([50]); // 0-100, 50 = mix
+    const [diffMode, setDiffMode] = useState<"classic" | "semantic">("classic");
+    const [advancedContent, setAdvancedContent] = useState<{
+        sch: string | null;
+        pcb: string | null;
+    }>({ sch: null, pcb: null });
+    const [advancedLoading, setAdvancedLoading] = useState(false);
 
     // BoM Filtering
     const [filters, setFilters] = useState({
@@ -80,7 +104,7 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
                 const res = await fetch(`/api/projects/${projectId}/diff`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ commit1, commit2 })
+                    body: JSON.stringify({ commit1, commit2, advanced: advanced || false })
                 });
 
                 if (!res.ok) throw new Error("Failed to start diff job");
@@ -133,6 +157,43 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
         poll();
         return () => clearInterval(interval);
     }, [jobId, projectId, status?.status, manifest]);
+
+    // Fetch Advanced Content when switching to semantic mode
+    useEffect(() => {
+        if (diffMode !== "semantic" || !jobId || !manifest) return;
+
+        const fetchAdvanced = async () => {
+            if (viewMode === "schematic" && !advancedContent.sch && manifest.advanced_sch) {
+                setAdvancedLoading(true);
+                try {
+                    const res = await fetch(`/api/projects/${projectId}/diff/${jobId}/advanced/sch`);
+                    if (res.ok) {
+                        const content = await res.text();
+                        setAdvancedContent(prev => ({ ...prev, sch: content }));
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch advanced sch", e);
+                } finally {
+                    setAdvancedLoading(false);
+                }
+            } else if (viewMode === "pcb" && !advancedContent.pcb && manifest.advanced_pcb) {
+                setAdvancedLoading(true);
+                try {
+                    const res = await fetch(`/api/projects/${projectId}/diff/${jobId}/advanced/pcb`);
+                    if (res.ok) {
+                        const content = await res.text();
+                        setAdvancedContent(prev => ({ ...prev, pcb: content }));
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch advanced pcb", e);
+                } finally {
+                    setAdvancedLoading(false);
+                }
+            }
+        };
+
+        fetchAdvanced();
+    }, [diffMode, viewMode, jobId, manifest, projectId, advancedContent.sch, advancedContent.pcb]);
 
     // Scroll logs
     useEffect(() => {
@@ -271,6 +332,37 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
 
         if (!currentItem) return <div className="flex items-center justify-center h-full text-muted-foreground">No assets found</div>;
 
+        if (diffMode === "semantic") {
+            const content = isSch ? advancedContent.sch : advancedContent.pcb;
+
+            if (advancedLoading) {
+                return (
+                    <div className="flex flex-col items-center justify-center h-full gap-4">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <p className="text-sm text-muted-foreground">Loading semantic data...</p>
+                    </div>
+                );
+            }
+
+            if (!content) {
+                return <div className="flex items-center justify-center h-full text-muted-foreground">Semantic data not available</div>;
+            }
+
+            return (
+                <div className="w-full h-full bg-background relative selection-none">
+                    <ecad-viewer
+                        style={{ width: '100%', height: '100%' }}
+                        semantic-diff="true"
+                    >
+                        <EcadBlobWrapper
+                            filename={isSch ? "diff.kicad_sch" : "diff.kicad_pcb"}
+                            content={content}
+                        />
+                    </ecad-viewer>
+                </div>
+            );
+        }
+
         const oldImg = getAssetUrl(commit2, isSch ? "sch" : "pcb", currentItem);
         const newImg = getAssetUrl(commit1, isSch ? "sch" : "pcb", currentItem);
 
@@ -367,6 +459,27 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
                                     <ClipboardList className="h-4 w-4 mr-2" /> BoM
                                 </Button>
                             </div>
+
+                            {/* Diff Mode Toggle (Classic vs Semantic) */}
+                            {(manifest.advanced_sch || manifest.advanced_pcb) && viewMode !== "bom" && (
+                                <div className="flex items-center rounded-md border bg-background p-1">
+                                    <Button
+                                        variant={diffMode === "classic" ? "secondary" : "ghost"}
+                                        size="sm"
+                                        onClick={() => setDiffMode("classic")}
+                                    >
+                                        Classic
+                                    </Button>
+                                    <Button
+                                        variant={diffMode === "semantic" ? "secondary" : "ghost"}
+                                        size="sm"
+                                        onClick={() => setDiffMode("semantic")}
+                                        disabled={(viewMode === "schematic" && !manifest.advanced_sch) || (viewMode === "pcb" && !manifest.advanced_pcb)}
+                                    >
+                                        Semantic
+                                    </Button>
+                                </div>
+                            )}
 
                             {/* Selector */}
                             <div className="w-64">
