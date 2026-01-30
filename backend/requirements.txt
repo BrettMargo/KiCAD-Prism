@@ -6,3 +6,4 @@ pydantic-settings
 python-dotenv
 google-auth
 requests
+kiutils
