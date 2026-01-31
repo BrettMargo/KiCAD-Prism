@@ -271,6 +271,18 @@ async def get_project_detail(project_id: str):
         raise HTTPException(status_code=404, detail="Project not found")
     return project
 
+@router.delete("/{project_id}")
+async def delete_project_endpoint(project_id: str):
+    """
+    Delete a project from the registry.
+    For standalone projects, this also deletes the project files.
+    For monorepo sub-projects, only removes the registry entry.
+    """
+    success = project_service.delete_project(project_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"message": "Project deleted successfully"}
+
 @router.get("/{project_id}/files", response_model=List[file_service.FileItem])
 async def get_project_files(project_id: str, type: str = "design"):
     """

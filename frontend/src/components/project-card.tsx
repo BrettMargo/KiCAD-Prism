@@ -1,16 +1,19 @@
 import { Project } from "@/types/project";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, Box } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CalendarDays, Box, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface ProjectCardProps {
     project: Project;
     compact?: boolean;
     onClick?: () => void;
+    onDelete?: () => void;
+    showDelete?: boolean;
 }
 
-export function ProjectCard({ project, compact, onClick }: ProjectCardProps) {
+export function ProjectCard({ project, compact, onClick, onDelete, showDelete }: ProjectCardProps) {
     const navigate = useNavigate();
 
     const thumbnailUrl = project.thumbnail_url ? project.thumbnail_url : null;
@@ -63,10 +66,23 @@ export function ProjectCard({ project, compact, onClick }: ProjectCardProps) {
                         <Box className="h-10 w-10 opacity-20" />
                     </div>
                 )}
-                <div className="absolute top-2 right-2">
+                <div className="absolute top-2 right-2 flex gap-1">
                     <Badge variant="secondary" className="backdrop-blur-sm bg-background/80 border text-[10px]">
                         Git
                     </Badge>
+                    {showDelete && onDelete && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 bg-background/80 backdrop-blur-sm hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete();
+                            }}
+                        >
+                            <Trash2 className="h-3 w-3" />
+                        </Button>
+                    )}
                 </div>
             </div>
 

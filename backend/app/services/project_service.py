@@ -575,6 +575,33 @@ def find_ibom_file(project_path: str) -> Optional[str]:
             return os.path.join(resolved.design_outputs_dir, file)
     return None
 
+def delete_project(project_id: str) -> bool:
+    """
+    Delete a project from the registry and optionally remove its files.
+    Returns True if project was found and deleted, False otherwise.
+    """
+    registry = _load_project_registry()
+    
+    if project_id not in registry:
+        return False
+    
+    project_data = registry[project_id]
+    project_path = project_data.get("path")
+    parent_repo = project_data.get("parent_repo")
+    
+    # Remove from registry
+    del registry[project_id]
+    _save_project_registry(registry)
+    
+    # For standalone projects (not in monorepo), delete the directory
+    if not parent_repo and project_path and os.path.exists(project_path):
+        try:
+            shutil.rmtree(project_path)
+        except Exception as e:
+            print(f"Warning: Failed to delete project directory {project_path}: {e}")
+    
+    return True
+
 def get_subsheets(project_path: str, main_schematic: str) -> List[str]:
     """Find all .kicad_sch files using path config."""
     subsheets = []

@@ -318,6 +318,39 @@ export function Workspace() {
     setSearchQuery("");
   };
 
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteProject = async (project: Project) => {
+    setProjectToDelete(project);
+  };
+
+  const confirmDelete = async () => {
+    if (!projectToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectToDelete.id}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        // Remove from recent projects if present
+        setRecentProjectIds((prev) => prev.filter((id) => id !== projectToDelete.id));
+        // Refresh the project list
+        fetchData();
+      } else {
+        alert('Failed to delete project');
+      }
+    } catch (e) {
+      console.error('Delete error:', e);
+      alert('Failed to delete project');
+    } finally {
+      setIsDeleting(false);
+      setProjectToDelete(null);
+    }
+  };
+
   const handleBreadcrumbClick = (index: number) => {
     if (!selectedMonorepo) return;
     if (index === 0) {
@@ -618,6 +651,8 @@ export function Workspace() {
                         project={project}
                         compact
                         onClick={() => handleSelectProject(project)}
+                        showDelete
+                        onDelete={() => handleDeleteProject(project)}
                       />
                     ))}
                   </div>
@@ -638,6 +673,8 @@ export function Workspace() {
                         key={project.id}
                         project={project}
                         onClick={() => handleSelectProject(project)}
+                        showDelete
+                        onDelete={() => handleDeleteProject(project)}
                       />
                     ))}
                   </div>
@@ -647,6 +684,27 @@ export function Workspace() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{projectToDelete?.name}</strong>?
+              This action cannot be undone. The project files will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProjectToDelete(null)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={isDeleting}>
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
