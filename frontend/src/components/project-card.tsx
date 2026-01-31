@@ -6,20 +6,50 @@ import { useNavigate } from "react-router-dom";
 
 interface ProjectCardProps {
     project: Project;
+    compact?: boolean;
+    onClick?: () => void;
 }
 
-export function ProjectCard({ project }: ProjectCardProps) {
+export function ProjectCard({ project, compact, onClick }: ProjectCardProps) {
     const navigate = useNavigate();
 
-    // Construct full URL for thumbnail if it exists
-    const thumbnailUrl = project.thumbnail_url
-        ? project.thumbnail_url
-        : null;
+    const thumbnailUrl = project.thumbnail_url ? project.thumbnail_url : null;
+
+    const handleClick = () => {
+        if (onClick) {
+            onClick();
+        } else {
+            navigate(`/project/${project.id}`);
+        }
+    };
+
+    if (compact) {
+        return (
+            <Card
+                className="overflow-hidden hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group bg-card border shadow-sm"
+                onClick={handleClick}
+            >
+                <div className="flex items-center gap-3 p-3">
+                    <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                        {thumbnailUrl ? (
+                            <img src={thumbnailUrl} alt={project.name} className="w-full h-full object-cover" />
+                        ) : (
+                            <Box className="h-6 w-6 opacity-20" />
+                        )}
+                    </div>
+                    <div className="min-w-0">
+                        <h3 className="font-medium text-sm truncate">{project.name}</h3>
+                        <p className="text-xs text-muted-foreground">{project.last_modified}</p>
+                    </div>
+                </div>
+            </Card>
+        );
+    }
 
     return (
         <Card
             className="overflow-hidden hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group bg-card border shadow-sm"
-            onClick={() => navigate(`/project/${project.id}`)}
+            onClick={handleClick}
         >
             <div className="aspect-video w-full overflow-hidden bg-muted relative border-b">
                 {thumbnailUrl ? (

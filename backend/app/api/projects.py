@@ -10,10 +10,163 @@ from app.services import project_discovery_service
 router = APIRouter()
 
 from pydantic import BaseModel
+from typing import Dict, List, Optional
+
+class Monorepo(BaseModel):
+    name: str
+    path: str
+    project_count: int
+    last_synced: Optional[str] = None
+    repo_url: Optional[str] = None
 
 @router.get("/", response_model=List[project_service.Project])
 async def list_projects():
-    return project_service.get_registered_projects()
+    # Return only standalone projects (not monorepo sub-projects)
+    all_projects = project_service.get_registered_projects()
+    return [p for p in all_projects if p.parent_repo is None]
+
+@router.get("/monorepos", response_model=List[Monorepo])
+async def list_monorepos():
+    """
+    List all monorepos with their metadata.
+    """
+    monorepos = []
+    
+    if os.path.exists(project_service.MONOREPOS_ROOT):
+        for repo_name in os.listdir(project_service.MONOREPOS_ROOT):
+            repo_path = os.path.join(project_service.MONOREPOS_ROOT, repo_name)
+            if not os.path.isdir(repo_path) or repo_name.startswith('.'):
+                continue
+            
+            # Count projects in this monorepo
+            all_projects = project_service.get_registered_projects()
+            repo_projects = [p for p in all_projects if p.parent_repo == repo_name]
+            
+            # Get last synced time from git
+            last_synced = None
+            git_dir = os.path.join(repo_path, '.git')
+            if os.path.exists(git_dir):
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['git', '-C', repo_path, 'log', '-1', '--format=%ci'],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        last_synced = result.stdout.strip()
+                except:
+                    pass
+            
+            # Get repo URL from first project
+            repo_url = None
+            if repo_projects:
+                repo_url = repo_projects[0].repo_url
+            
+            monorepos.append(Monorepo(
+                name=repo_name,
+                path=repo_path,
+                project_count=len(repo_projects),
+                last_synced=last_synced,
+                repo_url=repo_url
+            ))
+    
+    return monorepos
+
+@router.get("/monorepos/{repo_name}/structure")
+async def get_monorepo_structure(repo_name: str, subpath: str = ""):
+    """
+    Get folder structure for a monorepo at a given subpath.
+    Returns folders and projects at that level.
+    """
+    repo_path = os.path.join(project_service.MONOREPOS_ROOT, repo_name)
+    if not os.path.exists(repo_path) or not os.path.isdir(repo_path):
+        raise HTTPException(status_code=404, detail="Monorepo not found")
+    
+    current_path = os.path.join(repo_path, subpath) if subpath else repo_path
+    if not os.path.exists(current_path) or not os.path.isdir(current_path):
+        raise HTTPException(status_code=404, detail="Path not found")
+    
+    # Security: ensure path is within repo
+    if not os.path.abspath(current_path).startswith(os.path.abspath(repo_path)):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    
+    folders = []
+    projects = []
+    
+    all_registered = project_service.get_registered_projects()
+    repo_projects = {p.sub_path: p for p in all_registered if p.parent_repo == repo_name}
+    
+    for item in os.listdir(current_path):
+        item_path = os.path.join(current_path, item)
+        relative_path = os.path.relpath(item_path, repo_path)
+        
+        if os.path.isdir(item_path):
+            # Skip hidden directories and archive folders
+            if item.startswith('.') or item.lower() in ['archive', 'archived', 'old', 'backup', 'backups', 'obsolete']:
+                continue
+            
+            # Count items in folder (for display)
+            try:
+                item_count = len(os.listdir(item_path))
+            except:
+                item_count = 0
+            
+            folders.append({
+                "name": item,
+                "path": relative_path,
+                "item_count": item_count
+            })
+        
+        # Check if this directory contains a .kicad_pro file
+        if os.path.isdir(item_path):
+            pro_files = [f for f in os.listdir(item_path) if f.endswith('.kicad_pro')]
+            if pro_files:
+                # This is a KiCAD project
+                project = repo_projects.get(relative_path)
+                if project:
+                    projects.append({
+                        "id": project.id,
+                        "name": project.name,
+                        "relative_path": relative_path,
+                        "has_thumbnail": project_service.get_project_thumbnail_path(project.id) is not None,
+                        "last_modified": project.last_modified
+                    })
+    
+    return {
+        "repo_name": repo_name,
+        "current_path": subpath,
+        "folders": folders,
+        "projects": projects
+    }
+
+@router.get("/search")
+async def search_projects(q: str = ""):
+    """
+    Search across all projects (standalone and monorepo sub-projects).
+    Returns matching projects based on name and description.
+    """
+    if not q:
+        return {"results": []}
+    
+    query = q.lower()
+    all_projects = project_service.get_registered_projects()
+    
+    results = []
+    for project in all_projects:
+        if (query in project.name.lower() or 
+            query in project.description.lower() or
+            (project.parent_repo and query in project.parent_repo.lower())):
+            results.append({
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "parent_repo": project.parent_repo,
+                "sub_path": project.sub_path,
+                "last_modified": project.last_modified,
+                "thumbnail_url": f"/api/projects/{project.id}/thumbnail"
+            })
+    
+    return {"results": results}
 
 class ImportRequest(BaseModel):
     url: str

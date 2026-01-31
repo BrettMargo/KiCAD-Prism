@@ -10,7 +10,20 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage';
 
 
 function App() {
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<User | null>(() => {
+        // Restore user from localStorage on initial load
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('auth_user');
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch {
+                    return null;
+                }
+            }
+        }
+        return null;
+    });
     const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -25,13 +38,17 @@ function App() {
 
                     // If auth is disabled, auto-login as guest
                     if (!config.auth_enabled) {
-                        setUser({ name: 'Guest', email: 'guest@local' });
+                        const guestUser = { name: 'Guest', email: 'guest@local' };
+                        setUser(guestUser);
+                        localStorage.setItem('auth_user', JSON.stringify(guestUser));
                     }
                 }
             } catch (err) {
                 console.error('Failed to fetch auth config:', err);
                 // On error, default to no auth (allow access)
-                setUser({ name: 'Guest', email: 'guest@local' });
+                const guestUser = { name: 'Guest', email: 'guest@local' };
+                setUser(guestUser);
+                localStorage.setItem('auth_user', JSON.stringify(guestUser));
             } finally {
                 setLoading(false);
             }
@@ -39,6 +56,20 @@ function App() {
 
         fetchAuthConfig();
     }, []);
+
+    // Persist user to localStorage when it changes
+    useEffect(() => {
+        if (user) {
+            localStorage.setItem('auth_user', JSON.stringify(user));
+        } else {
+            localStorage.removeItem('auth_user');
+        }
+    }, [user]);
+
+    const handleLogout = () => {
+        setUser(null);
+        localStorage.removeItem('auth_user');
+    };
 
     // Show loading state while fetching auth config
     if (loading) {
@@ -87,7 +118,7 @@ function App() {
                                     {user && user.email !== 'guest@local' && (
                                         <>
                                             <span className="text-sm text-muted-foreground">Welcome, {user.name}</span>
-                                            <Button variant="ghost" size="sm" onClick={() => setUser(null)}>Logout</Button>
+                                            <Button variant="ghost" size="sm" onClick={handleLogout}>Logout</Button>
                                         </>
                                     )}
                                     {user && user.email === 'guest@local' && (
