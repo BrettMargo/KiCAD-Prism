@@ -173,10 +173,42 @@ const [designReady, setDesignReady] = useState(false);
         fetchData();
     }, [projectId]);
 
+    // Track when crude fix has been applied to prevent multiple executions
+    const [crudeFixApplied, setCrudeFixApplied] = useState(false);
+
     // Reset design ready when project changes
     useEffect(() => {
         setDesignReady(false);
+        setCrudeFixApplied(false); // Reset crude fix flag for new project
     }, [projectId]);
+
+    // CRUDE FIX: Auto-switch to iBoM and back to trigger schematic loading
+    // 
+    // ISSUE: Schematics don't load on initial render due to race condition between
+    // React component mounting and ecad-viewer custom element initialization.
+    // The schematic loads correctly when manually switching between tabs.
+    //
+    // WORKAROUND: Automatically switch to iBoM tab briefly (100ms) then back to ECAD
+    // This triggers the ecad-viewer to properly initialize and load the schematic content.
+    //
+    // TODO: This is a temporary fix. The proper solution would be to fix the race condition
+    // in the ecad-viewer component initialization or React lifecycle management.
+    useEffect(() => {
+        if (!loading && (schematicContent || pcbContent) && activeTab === "ecad" && !crudeFixApplied) {
+            // Only run this once when component first loads with content
+            const timer = setTimeout(() => {
+                console.log("CRUDE FIX: Applying schematic loading workaround - switching to iBoM and back");
+                setActiveTab("ibom");
+                setTimeout(() => {
+                    setActiveTab("ecad");
+                    setCrudeFixApplied(true);
+                    console.log("CRUDE FIX: Workaround completed - schematic should now be loaded");
+                }, 100); // Very brief switch - just enough to trigger re-render
+            }, 500); // Wait for initial render to complete
+            
+            return () => clearTimeout(timer);
+        }
+    }, [loading, schematicContent, pcbContent, activeTab, crudeFixApplied]);
 
     // Event Listeners for ecad-viewer
     // Event Listeners for ecad-viewer

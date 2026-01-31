@@ -32,10 +32,10 @@ const Tooltip = ({ children }: { children: React.ReactNode }) => {
 
 // Trigger just passes through children since we handle hover on parent
 const TooltipTrigger = React.forwardRef<
-    HTMLElement,
-    React.HTMLAttributes<HTMLElement> & { asChild?: boolean }
->(({ children }) => {
-    return <>{children}</>
+    HTMLDivElement,
+    React.HTMLAttributes<HTMLDivElement> & { asChild?: boolean }
+>(({ children, ...props }, ref) => {
+    return <div ref={ref} {...props}>{children}</div>
 })
 TooltipTrigger.displayName = "TooltipTrigger"
 
