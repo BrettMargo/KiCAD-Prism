@@ -2,6 +2,7 @@ import os
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from app.services import path_config_service
 
 class FileItem(BaseModel):
     name: str
@@ -67,7 +68,16 @@ def get_project_files(project_path: str, output_type: str) -> List[FileItem]:
         project_path: Absolute path to project root
         output_type: 'design' or 'manufacturing'
     """
-    folder_name = "Design-Outputs" if output_type == "design" else "Manufacturing-Outputs"
-    output_dir = os.path.join(project_path, folder_name)
+    resolved = path_config_service.resolve_paths(project_path)
+    
+    if output_type == "design":
+        output_dir = resolved.design_outputs_dir
+    elif output_type == "manufacturing":
+        output_dir = resolved.manufacturing_outputs_dir
+    else:
+        return []
+    
+    if not output_dir or not os.path.exists(output_dir):
+        return []
     
     return get_files_recursive(output_dir)

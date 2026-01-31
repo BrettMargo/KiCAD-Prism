@@ -7,6 +7,7 @@ import { Plus, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { MultiProjectImportDialog } from "./multi-project-import-dialog";
 
 export function Workspace() {
     const [projects, setProjects] = useState<Project[]>([]);
@@ -19,6 +20,8 @@ export function Workspace() {
     const [importUrl, setImportUrl] = useState("");
     const [isImporting, setIsImporting] = useState(false);
     const [importStatus, setImportStatus] = useState({ message: "", percent: 0 });
+    const [isDiscovering, setIsDiscovering] = useState(false);
+    const [showMultiProjectDialog, setShowMultiProjectDialog] = useState(false);
 
     const fetchProjects = async () => {
         setLoading(true);
@@ -43,6 +46,44 @@ export function Workspace() {
     const handleImport = async () => {
         if (!importUrl) return;
 
+        setIsDiscovering(true);
+
+        try {
+            // First, discover projects in the repo
+            const discoverRes = await fetch("/api/projects/discover", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: importUrl }),
+            });
+
+            if (!discoverRes.ok) {
+                const errorData = await discoverRes.json();
+                throw new Error(errorData.detail || "Failed to discover projects");
+            }
+
+            const discovery = await discoverRes.json();
+
+            if (discovery.project_count > 1) {
+                // Multiple projects found - show selection dialog
+                setIsDiscovering(false);
+                setShowMultiProjectDialog(true);
+                setIsImportOpen(false);
+            } else if (discovery.project_count === 1) {
+                // Single project - import directly
+                setIsDiscovering(false);
+                await startImport([]);
+            } else {
+                // No projects found
+                setIsDiscovering(false);
+                alert("No KiCAD projects found in this repository");
+            }
+        } catch (err: any) {
+            setIsDiscovering(false);
+            alert(err.message);
+        }
+    };
+
+    const startImport = async (selectedPaths: string[]) => {
         setIsImporting(true);
         setImportStatus({ message: "Starting...", percent: 0 });
 
@@ -51,7 +92,7 @@ export function Workspace() {
             const startRes = await fetch("/api/projects/import", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: importUrl }),
+                body: JSON.stringify({ url: importUrl, selected_paths: selectedPaths }),
             });
 
             if (!startRes.ok) {
@@ -73,6 +114,7 @@ export function Workspace() {
                         clearInterval(pollInterval);
                         setIsImporting(false);
                         setIsImportOpen(false);
+                        setShowMultiProjectDialog(false);
                         setImportUrl("");
                         setImportStatus({ message: "", percent: 0 });
                         fetchProjects(); // Refresh list
@@ -118,7 +160,7 @@ export function Workspace() {
     return (
         <div className="h-full">
             <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold tracking-tight">Recent Projects</h2>
+                <h2 className="text-2xl font-bold tracking-tight">Projects</h2>
 
                 <div className="flex items-center gap-4">
                     <div className="relative w-full max-w-sm">
@@ -180,12 +222,19 @@ export function Workspace() {
                         <Button variant="outline" onClick={() => setIsImportOpen(false)} disabled={isImporting}>
                             Cancel
                         </Button>
-                        <Button onClick={handleImport} disabled={isImporting || !importUrl}>
-                            {isImporting ? "Importing..." : "Import"}
+                        <Button onClick={handleImport} disabled={isDiscovering || !importUrl}>
+                            {isDiscovering ? "Scanning..." : "Import"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <MultiProjectImportDialog
+                repoUrl={importUrl}
+                open={showMultiProjectDialog}
+                onOpenChange={setShowMultiProjectDialog}
+                onImport={startImport}
+            />
 
             {loading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

@@ -1,9 +1,10 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, History, Box, FolderOpen, ChevronLeft, ChevronRight, GitBranch, RotateCcw, PlayCircle, RefreshCw, Menu } from "lucide-react";
+import { ArrowLeft, FileText, History, Box, FolderOpen, ChevronLeft, ChevronRight, GitBranch, RotateCcw, PlayCircle, RefreshCw, Menu, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AssetsPortal } from "@/components/assets-portal";
+import { PathConfigDialog } from "@/components/path-config-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -42,6 +43,7 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
     const [visualizerLoaded, setVisualizerLoaded] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [pathConfigOpen, setPathConfigOpen] = useState(false);
 
     useEffect(() => {
         if (activeSection === 'visualizers') {
@@ -224,6 +226,26 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
                     <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
                     {syncing ? 'Syncing...' : 'Sync'}
                 </Button>
+
+                {/* Path Config Button */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPathConfigOpen(true)}
+                    className="flex items-center gap-2"
+                    title="Configure paths"
+                >
+                    <Settings className="h-4 w-4" />
+                    <span className="hidden md:inline">Paths</span>
+                </Button>
+
+                {projectId && (
+                    <PathConfigDialog
+                        projectId={projectId}
+                        open={pathConfigOpen}
+                        onOpenChange={setPathConfigOpen}
+                    />
+                )}
             </header>
 
             {/* Sync Message Banner */}

@@ -2,8 +2,10 @@ import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from typing import List, Optional
-from app.services import project_service, file_service
+from app.services import project_service, file_service, path_config_service
 from app.services.git_service import get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit, sync_with_remote
+from app.services.path_config_service import PathConfig
+from app.services import project_discovery_service
 
 router = APIRouter()
 
@@ -15,6 +17,36 @@ async def list_projects():
 
 class ImportRequest(BaseModel):
     url: str
+    selected_paths: Optional[List[str]] = None
+
+class DiscoverRequest(BaseModel):
+    url: str
+
+@router.post("/discover")
+async def discover_projects(request: DiscoverRequest):
+    """
+    Scan a repository to discover KiCAD projects before importing.
+    Returns a list of all .kicad_pro files found in the repo.
+    """
+    try:
+        result = project_discovery_service.clone_and_discover(request.url)
+        return {
+            "repo_url": result.repo_url,
+            "repo_name": result.repo_name,
+            "project_count": len(result.projects),
+            "projects": [
+                {
+                    "name": p.name,
+                    "relative_path": p.relative_path,
+                    "schematic_count": p.schematic_count,
+                    "pcb_count": p.pcb_count,
+                    "description": p.description
+                }
+                for p in result.projects
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Discovery failed: {str(e)}")
 
 @router.post("/import")
 async def import_project(request: ImportRequest):
@@ -22,7 +54,7 @@ async def import_project(request: ImportRequest):
     Start an async project import job.
     """
     try:
-        job_id = project_service.start_import_job(request.url)
+        job_id = project_service.start_import_job(request.url, request.selected_paths)
         return {"job_id": job_id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -124,11 +156,20 @@ async def download_file(project_id: str, path: str, type: str = "design", inline
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    folder_name = "Design-Outputs" if type == "design" else "Manufacturing-Outputs"
-    file_path = os.path.join(project.path, folder_name, path)
+    # Get output directory from path config
+    resolved = path_config_service.resolve_paths(project.path)
+    if type == "design":
+        output_dir = resolved.design_outputs_dir
+    else:
+        output_dir = resolved.manufacturing_outputs_dir
+    
+    if not output_dir:
+        raise HTTPException(status_code=404, detail=f"{type} outputs folder not configured")
+    
+    file_path = os.path.join(output_dir, path)
     
     # Security: prevent directory traversal
-    if not os.path.abspath(file_path).startswith(os.path.abspath(os.path.join(project.path, folder_name))):
+    if not os.path.abspath(file_path).startswith(os.path.abspath(output_dir)):
         raise HTTPException(status_code=400, detail="Invalid file path")
     
     if not os.path.exists(file_path):
@@ -143,7 +184,7 @@ async def download_file(project_id: str, path: str, type: str = "design", inline
 @router.get("/{project_id}/readme")
 async def get_project_readme(project_id: str, commit: str = None):
     """
-    Get README.md content from project root.
+    Get README content from project root.
     If commit is provided, fetch from that commit; otherwise use working directory.
     """
     projects = project_service.get_registered_projects()
@@ -151,19 +192,24 @@ async def get_project_readme(project_id: str, commit: str = None):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
+    # Get readme path from config
+    config = path_config_service.get_path_config(project.path)
+    readme_filename = config.readme or "README.md"
+    
     # If viewing a specific commit, use Git
     if commit:
         try:
-            content = get_file_from_commit(project.path, commit, "README.md")
+            content = get_file_from_commit(project.path, commit, readme_filename)
             return {"content": content}
         except HTTPException:
             raise
     
     # Otherwise read from filesystem
-    readme_path = os.path.join(project.path, "README.md")
+    resolved = path_config_service.resolve_paths(project.path)
+    readme_path = resolved.readme_path
     
-    if not os.path.exists(readme_path):
-        raise HTTPException(status_code=404, detail="README.md not found")
+    if not readme_path or not os.path.exists(readme_path):
+        raise HTTPException(status_code=404, detail="README not found")
     
     try:
         with open(readme_path, 'r', encoding='utf-8') as f:
@@ -201,21 +247,25 @@ async def get_project_asset(project_id: str, asset_path: str):
 @router.get("/{project_id}/docs")
 async def get_docs_files(project_id: str):
     """
-    List all files in the docs/ folder.
+    List all files in the documentation folder.
     """
     projects = project_service.get_registered_projects()
     project = next((p for p in projects if p.id == project_id), None)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    docs_dir = os.path.join(project.path, "docs")
+    resolved = path_config_service.resolve_paths(project.path)
+    docs_dir = resolved.documentation_dir
+    
+    if not docs_dir or not os.path.exists(docs_dir):
+        return []  # Return empty list if docs not configured/found
     
     return file_service.get_files_recursive(docs_dir)
 
 @router.get("/{project_id}/docs/content")
 async def get_doc_file_content(project_id: str, path: str, commit: str = None):
     """
-    Get markdown file content from docs/ folder.
+    Get markdown file content from documentation folder.
     If commit is provided, fetch from that commit; otherwise use working directory.
     """
     projects = project_service.get_registered_projects()
@@ -223,17 +273,26 @@ async def get_doc_file_content(project_id: str, path: str, commit: str = None):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
+    # Get documentation path from config
+    config = path_config_service.get_path_config(project.path)
+    docs_path = config.documentation or "docs"
+    
     # If viewing a specific commit, use Git
     if commit:
         try:
-            file_path = f"docs/{path}"
+            file_path = f"{docs_path}/{path}"
             content = get_file_from_commit(project.path, commit, file_path)
             return {"content": content, "path": path}
         except HTTPException:
             raise
     
     # Otherwise read from filesystem
-    docs_dir = os.path.join(project.path, "docs")
+    resolved = path_config_service.resolve_paths(project.path)
+    docs_dir = resolved.documentation_dir
+    
+    if not docs_dir or not os.path.exists(docs_dir):
+        raise HTTPException(status_code=404, detail="Documentation folder not found")
+    
     file_path = os.path.join(docs_dir, path)
     
     # Security: prevent directory traversal
@@ -282,6 +341,7 @@ async def sync_project(project_id: str):
     """
     Sync project repository with remote.
     
+    For monorepo sub-projects, syncs the parent repository.
     Performs a git fetch and hard reset to match the remote branch state.
     This will discard any local changes not pushed to remote.
     """
@@ -290,7 +350,16 @@ async def sync_project(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    result = sync_with_remote(project.path)
+    # If this is a sub-project in a monorepo, sync the parent repo
+    if project.parent_repo:
+        # Construct parent repo path
+        sync_path = os.path.join(project_service.MONOREPOS_ROOT, project.parent_repo)
+        if not os.path.exists(sync_path):
+            raise HTTPException(status_code=404, detail="Parent repository not found")
+    else:
+        sync_path = project.path
+    
+    result = sync_with_remote(sync_path)
     return result
 
 
@@ -357,3 +426,75 @@ async def get_project_ibom(project_id: str):
     if not path:
         raise HTTPException(status_code=404, detail="iBoM not found")
     return FileResponse(path)
+
+
+# Path Configuration Endpoints
+
+@router.get("/{project_id}/config")
+async def get_project_config(project_id: str):
+    """
+    Get path configuration for a project.
+    Returns the current path configuration (from .prism.json or auto-detected).
+    """
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    config = path_config_service.get_path_config(project.path)
+    resolved = path_config_service.resolve_paths(project.path, config)
+    
+    return {
+        "config": config.dict(),
+        "resolved": resolved.dict(),
+        "source": "explicit" if path_config_service._load_prism_config(project.path) else "auto-detected"
+    }
+
+
+@router.post("/{project_id}/detect-paths")
+async def detect_project_paths(project_id: str):
+    """
+    Run auto-detection on project paths.
+    Returns detected paths without saving them.
+    """
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    detected = path_config_service.detect_paths(project.path)
+    
+    return {
+        "detected": detected.dict(),
+        "validation": path_config_service.validate_config(project.path, detected)
+    }
+
+
+@router.put("/{project_id}/config")
+async def update_project_config(project_id: str, config: PathConfig):
+    """
+    Update path configuration for a project.
+    Saves configuration to .prism.json file.
+    """
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Validate the config before saving
+    validation = path_config_service.validate_config(project.path, config)
+    
+    # Save the configuration
+    path_config_service.save_path_config(project.path, config)
+    
+    # Clear cache to ensure fresh resolution
+    path_config_service.clear_config_cache(project.path)
+    
+    # Get resolved paths
+    resolved = path_config_service.resolve_paths(project.path, config)
+    
+    return {
+        "config": config.dict(),
+        "resolved": resolved.dict(),
+        "validation": validation
+    }
