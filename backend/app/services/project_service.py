@@ -82,6 +82,30 @@ def register_project(project_id: str, name: str, path: str, repo_url: str,
     
     _save_project_registry(registry)
 
+def _normalize_path(path: str) -> str:
+    """
+    Normalize project paths to work in both Docker and terminal environments.
+    Converts between /app/projects and absolute local paths.
+    """
+    # If path is already absolute and exists, return as-is
+    if os.path.isabs(path) and os.path.exists(path):
+        return path
+    
+    # Convert Docker path to local path
+    if path.startswith("/app/projects"):
+        local_path = path.replace("/app/projects", PROJECTS_ROOT)
+        if os.path.exists(local_path):
+            return local_path
+    
+    # Convert relative path to absolute
+    if not os.path.isabs(path):
+        abs_path = os.path.abspath(path)
+        if os.path.exists(abs_path):
+            return abs_path
+    
+    # Return original path if no conversion worked
+    return path
+
 def get_registered_projects() -> List[Project]:
     """
     Get all registered projects from the registry.
@@ -89,13 +113,16 @@ def get_registered_projects() -> List[Project]:
     registry = _load_project_registry()
     projects = []
     for project_id, data in registry.items():
+        # Normalize path for current environment
+        normalized_path = _normalize_path(data["path"])
+        
         # Verify the project path still exists
-        if not os.path.exists(data["path"]):
+        if not os.path.exists(normalized_path):
             continue
-            
+        
         # Update last modified time
         try:
-            mtime = os.path.getmtime(data["path"])
+            mtime = os.path.getmtime(normalized_path)
             last_modified = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
         except:
             last_modified = data.get("last_modified", "Unknown")
@@ -104,14 +131,14 @@ def get_registered_projects() -> List[Project]:
             id=project_id,
             name=data["name"],
             description=data.get("description", f"Project {data['name']}"),
-            path=data["path"],
+            path=normalized_path,
             last_modified=last_modified,
             thumbnail_url=f"/api/projects/{project_id}/thumbnail",
             sub_path=data.get("sub_path"),
             parent_repo=data.get("parent_repo"),
             repo_url=data.get("repo_url"),
             import_type=data.get("import_type"),
-            parent_repo_path=data.get("parent_repo_path") if data.get("import_type") == "type2_subproject" else None
+            parent_repo_path=_normalize_path(data.get("parent_repo_path")) if data.get("import_type") == "type2_subproject" else None
         ))
     
     return projects
