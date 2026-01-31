@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as React from "react";
-import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare, GitBranch } from "lucide-react";
+import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare, GitBranch, CircuitBoard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -34,29 +34,35 @@ interface VisualizerProps {
     user: User | null;
 }
 
-type VisualizerTab = "ecad" | "3d" | "ibom";
+type VisualizerTab = "sch" | "pcb" | "3d" | "ibom";
 
 export function Visualizer({ projectId, user }: VisualizerProps) {
-    const [viewerElement, setViewerElement] = useState<HTMLElement | null>(null);
-    const viewerRef = useRef<HTMLElement | null>(null);
+    const [schematicViewerElement, setSchematicViewerElement] = useState<HTMLElement | null>(null);
+    const [pcbViewerElement, setPcbViewerElement] = useState<HTMLElement | null>(null);
+    const schematicViewerRef = useRef<HTMLElement | null>(null);
+    const pcbViewerRef = useRef<HTMLElement | null>(null);
 
-    // Callback ref to sync state and ref
-    const setViewerRef = useCallback((node: HTMLElement | null) => {
-        viewerRef.current = node;
-        setViewerElement(node);
+    // Callback refs to sync state and refs
+    const setSchematicViewerRef = useCallback((node: HTMLElement | null) => {
+        schematicViewerRef.current = node;
+        setSchematicViewerElement(node);
+    }, []);
+    
+    const setPcbViewerRef = useCallback((node: HTMLElement | null) => {
+        pcbViewerRef.current = node;
+        setPcbViewerElement(node);
     }, []);
 
-    const [activeTab, setActiveTab] = useState<VisualizerTab>("ecad");
+    const [activeTab, setActiveTab] = useState<VisualizerTab>("sch");
     const [schematicContent, setSchematicContent] = useState<string | null>(null);
     const [subsheets, setSubsheets] = useState<{ filename: string, content: string }[]>([]);
     const [pcbContent, setPcbContent] = useState<string | null>(null);
     const [modelUrl, setModelUrl] = useState<string | null>(null);
     const [ibomUrl, setIbomUrl] = useState<string | null>(null);
+    const [schematicContentLoaded, setSchematicContentLoaded] = useState(false);
+    const [pcbContentLoaded, setPcbContentLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [_error, setError] = useState<Record<string, string>>({});
 
-    // Track when all design content is ready
-const [designReady, setDesignReady] = useState(false);
     const [comments, setComments] = useState<Comment[]>([]);
     const [activeContext, setActiveContext] = useState<CommentContext>("PCB");
     const [activePage, setActivePage] = useState<string>("root.kicad_sch");
@@ -78,58 +84,15 @@ const [designReady, setDesignReady] = useState(false);
             const baseUrl = `/api/projects/${projectId}`;
 
             try {
-                // Parallel fetch for main assets
-                // We also fetch the file list to find the specific .glb in Design-Outputs/3DModel
-                const [schRes, pcbRes, modelRes, ibomRes, commentsRes, filesRes] = await Promise.allSettled([
-                    fetch(`${baseUrl}/schematic`),
-                    fetch(`${baseUrl}/pcb`),
+                // Parallel fetch for main assets (excluding schematic and PCB content for now)
+                const [modelRes, ibomRes, commentsRes, filesRes] = await Promise.allSettled([
                     fetch(`${baseUrl}/3d-model`),
                     fetch(`${baseUrl}/ibom`),
                     fetch(`/api/projects/${projectId}/comments`),
                     fetch(`${baseUrl}/files?type=design`)
                 ]);
 
-                // Handle Schematic
-                let schematicText: string | null = null;
-                if (schRes.status === "fulfilled" && schRes.value.ok) {
-                    schematicText = await schRes.value.text();
-                    setSchematicContent(schematicText);
-                    // Try fetch subsheets
-                    try {
-                        const subsheetsRes = await fetch(`${baseUrl}/schematic/subsheets`);
-                        if (subsheetsRes.ok) {
-                            const data = await subsheetsRes.json();
-                            if (data.files?.length) {
-                                const subsheetPromises = data.files.map(async (f: any) => {
-                                    const cRes = await fetch(f.url);
-                                    let filename = f.name || f.path || f.url.split('/').pop() || "subsheet.kicad_sch";
-                                    if (!filename.endsWith('.kicad_sch')) filename += '.kicad_sch';
-                                    if (!filename.includes('/') && f.url.includes('Subsheets')) filename = `Subsheets/${filename}`;
-                                    return { filename, content: await cRes.text() };
-                                });
-                                setSubsheets(await Promise.all(subsheetPromises));
-                            }
-                        }
-                    } catch (e) {
-                        console.warn("Subsheets fetch failed", e);
-                    }
-                } else {
-                    setError(prev => ({ ...prev, schematic: "Schematic not found" }));
-                }
-
-                // Handle PCB
-                if (pcbRes.status === "fulfilled" && pcbRes.value.ok) {
-                    setPcbContent(await pcbRes.value.text());
-                    setActiveContext("PCB");
-                } else {
-                    setError(prev => ({ ...prev, pcb: "PCB not found" }));
-                }
-
-                // All design content is now set - mark ready
-                setDesignReady(true);
-
                 // Handle 3D
-                // Strategy: favor a .glb found in Design-Outputs/3DModel for better viewer compatibility
                 let glbUrl = null;
                 if (filesRes.status === "fulfilled" && filesRes.value.ok) {
                     try {
@@ -173,13 +136,85 @@ const [designReady, setDesignReady] = useState(false);
         fetchData();
     }, [projectId]);
 
+    // Lazy load schematic content when schematic tab is first accessed
+    useEffect(() => {
+        if (activeTab === "sch" && !schematicContentLoaded) {
+            const loadSchematic = async () => {
+                try {
+                    const baseUrl = `/api/projects/${projectId}`;
+                    const [schRes, subsheetsRes] = await Promise.allSettled([
+                        fetch(`${baseUrl}/schematic`),
+                        fetch(`${baseUrl}/schematic/subsheets`)
+                    ]);
+
+                    // Handle Schematic
+                    if (schRes.status === "fulfilled" && schRes.value.ok) {
+                        const schematicText = await schRes.value.text();
+                        setSchematicContent(schematicText);
+                        setActiveContext("SCH");
+                    } else {
+                        console.error("Schematic not found");
+                    }
+
+                    // Handle Subsheets
+                    if (subsheetsRes.status === "fulfilled" && subsheetsRes.value.ok) {
+                        const data = await subsheetsRes.value.json();
+                        if (data.files?.length) {
+                            const subsheetPromises = data.files.map(async (f: any) => {
+                                const cRes = await fetch(f.url);
+                                let filename = f.name || f.path || f.url.split('/').pop() || "subsheet.kicad_sch";
+                                if (!filename.endsWith('.kicad_sch')) filename += '.kicad_sch';
+                                if (!filename.includes('/') && f.url.includes('Subsheets')) filename = `Subsheets/${filename}`;
+                                return { filename, content: await cRes.text() };
+                            });
+                            setSubsheets(await Promise.all(subsheetPromises));
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error loading schematic content", err);
+                } finally {
+                    setSchematicContentLoaded(true);
+                }
+            };
+
+            loadSchematic();
+        }
+    }, [activeTab, schematicContentLoaded, projectId]);
+
+    // Lazy load PCB content when PCB tab is first accessed
+    useEffect(() => {
+        if (activeTab === "pcb" && !pcbContentLoaded) {
+            const loadPcb = async () => {
+                try {
+                    const baseUrl = `/api/projects/${projectId}`;
+                    const pcbRes = await fetch(`${baseUrl}/pcb`);
+
+                    if (pcbRes.ok) {
+                        const pcbText = await pcbRes.text();
+                        setPcbContent(pcbText);
+                        setActiveContext("PCB");
+                    } else {
+                        console.error("PCB not found");
+                    }
+                } catch (err) {
+                    console.error("Error loading PCB content", err);
+                } finally {
+                    setPcbContentLoaded(true);
+                }
+            };
+
+            loadPcb();
+        }
+    }, [activeTab, pcbContentLoaded, projectId]);
+
     // Track when crude fix has been applied to prevent multiple executions
     const [crudeFixApplied, setCrudeFixApplied] = useState(false);
 
-    // Reset design ready when project changes
+    // Reset lazy loading flags when project changes
     useEffect(() => {
-        setDesignReady(false);
-        setCrudeFixApplied(false); // Reset crude fix flag for new project
+        setSchematicContentLoaded(false);
+        setPcbContentLoaded(false);
+        setCrudeFixApplied(false);
     }, [projectId]);
 
     // CRUDE FIX: Auto-switch to iBoM and back to trigger schematic loading
@@ -188,19 +223,19 @@ const [designReady, setDesignReady] = useState(false);
     // React component mounting and ecad-viewer custom element initialization.
     // The schematic loads correctly when manually switching between tabs.
     //
-    // WORKAROUND: Automatically switch to iBoM tab briefly (100ms) then back to ECAD
+    // WORKAROUND: Automatically switch to iBoM tab briefly (100ms) then back to SCH
     // This triggers the ecad-viewer to properly initialize and load the schematic content.
     //
     // TODO: This is a temporary fix. The proper solution would be to fix the race condition
     // in the ecad-viewer component initialization or React lifecycle management.
     useEffect(() => {
-        if (!loading && (schematicContent || pcbContent) && activeTab === "ecad" && !crudeFixApplied) {
-            // Only run this once when component first loads with content
+        if (!loading && schematicContentLoaded && activeTab === "sch" && !crudeFixApplied) {
+            // Only run this once when schematic content is loaded
             const timer = setTimeout(() => {
                 console.log("CRUDE FIX: Applying schematic loading workaround - switching to iBoM and back");
                 setActiveTab("ibom");
                 setTimeout(() => {
-                    setActiveTab("ecad");
+                    setActiveTab("sch");
                     setCrudeFixApplied(true);
                     console.log("CRUDE FIX: Workaround completed - schematic should now be loaded");
                 }, 100); // Very brief switch - just enough to trigger re-render
@@ -208,13 +243,14 @@ const [designReady, setDesignReady] = useState(false);
             
             return () => clearTimeout(timer);
         }
-    }, [loading, schematicContent, pcbContent, activeTab, crudeFixApplied]);
+    }, [loading, schematicContentLoaded, activeTab, crudeFixApplied]);
 
     // Event Listeners for ecad-viewer
-    // Event Listeners for ecad-viewer
     useEffect(() => {
-        const viewer = viewerElement;
-        if (!viewer) return;
+        const schematicViewer = schematicViewerElement;
+        const pcbViewer = pcbViewerElement;
+        
+        if (!schematicViewer && !pcbViewer) return;
 
         const handleCommentClick = (e: CustomEvent) => {
             const detail = e.detail;
@@ -239,31 +275,52 @@ const [designReady, setDesignReady] = useState(false);
             else if (e.detail?.sheetName) setActivePage(e.detail.sheetName);
         };
 
-        viewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
-        viewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
-        viewer.addEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
+        // Add listeners to both viewers
+        if (schematicViewer) {
+            schematicViewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
+            schematicViewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
+            schematicViewer.addEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
+        }
+        
+        if (pcbViewer) {
+            pcbViewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
+            pcbViewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
+            pcbViewer.addEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
+        }
 
         return () => {
-            viewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
-            viewer.removeEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
-            viewer.removeEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
+            if (schematicViewer) {
+                schematicViewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
+                schematicViewer.removeEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
+                schematicViewer.removeEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
+            }
+            if (pcbViewer) {
+                pcbViewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
+                pcbViewer.removeEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
+                pcbViewer.removeEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
+            }
         };
-    }, [activeContext, viewerElement]);
+    }, [activeContext, schematicViewerElement, pcbViewerElement]);
 
     // Toggle Comment Mode
     const toggleCommentMode = () => {
         const newMode = !commentMode;
         setCommentMode(newMode);
 
-        const viewer = viewerRef.current as any;
-        if (viewer) {
-            if (viewer.setCommentMode) {
-                viewer.setCommentMode(newMode);
-            } else if (viewer) {
-                if (newMode) viewer.setAttribute("comment-mode", "true");
-                else viewer.removeAttribute("comment-mode");
+        // Apply to both viewers
+        const schViewer = schematicViewerRef.current as any;
+        const pcbViewer = pcbViewerRef.current as any;
+        
+        [schViewer, pcbViewer].forEach(viewer => {
+            if (viewer) {
+                if (viewer.setCommentMode) {
+                    viewer.setCommentMode(newMode);
+                } else {
+                    if (newMode) viewer.setAttribute("comment-mode", "true");
+                    else viewer.removeAttribute("comment-mode");
+                }
             }
-        }
+        });
     };
 
     // Submit Comment
@@ -299,29 +356,25 @@ const [designReady, setDesignReady] = useState(false);
 
     // Navigate to Comment
     const handleCommentNavigate = (comment: Comment) => {
-        const viewer = viewerRef.current as any;
-        if (!viewer) return;
-
-        // Force switch to ECAD tab if in 3D/iBom
-        if (activeTab !== "ecad") setActiveTab("ecad");
-
-        // Logic to switch context (PCB vs SCH)
-        // We lack a direct public API to switch TABS in ecad-viewer easily (it's internal).
-        // But if comment is SCH and we are on PCB, we should try.
-        // Assuming user actively manages tabs, or we try `switchPage` which might force SCH.
-
-        if (comment.context === "SCH") {
-            if (comment.location.page) {
-                // This might auto-switch tab if implemented in viewer
-                viewer.switchPage(comment.location.page);
-            }
-        } else {
-            // If PCB, we might not have a switch to PCB method exposed yet
-            // Maybe zooming works?
+        // Force switch to appropriate tab if in 3D/iBom
+        if (comment.context === "SCH" && activeTab !== "sch") {
+            setActiveTab("sch");
+        } else if (comment.context === "PCB" && activeTab !== "pcb") {
+            setActiveTab("pcb");
         }
 
-        if (viewer.zoomToLocation) {
-            viewer.zoomToLocation(comment.location.x, comment.location.y);
+        // Get the appropriate viewer
+        const viewer = comment.context === "SCH" ? schematicViewerRef.current : pcbViewerRef.current;
+        if (!viewer) return;
+
+        const viewerAny = viewer as any;
+
+        if (comment.context === "SCH" && comment.location.page) {
+            viewerAny.switchPage(comment.location.page);
+        }
+
+        if (viewerAny.zoomToLocation) {
+            viewerAny.zoomToLocation(comment.location.x, comment.location.y);
         }
     };
 
@@ -421,7 +474,8 @@ const [designReady, setDesignReady] = useState(false);
 
     // Tab Config
     const tabs: { id: VisualizerTab; label: string; icon: any }[] = [
-        { id: "ecad", label: "Schematic & PCB", icon: Cpu },
+        { id: "sch", label: "Schematic", icon: Cpu },
+        { id: "pcb", label: "PCB Layout", icon: CircuitBoard },
         { id: "3d", label: "3D View", icon: Box },
         { id: "ibom", label: "iBoM", icon: FileText },
     ];
@@ -450,7 +504,7 @@ const [designReady, setDesignReady] = useState(false);
                 <div className="flex-1" />
 
                 {/* Comment Controls */}
-                {activeTab === "ecad" && (
+                {(activeTab === "sch" || activeTab === "pcb") && (
                     <>
                         <Button
                             variant={commentMode ? "default" : "ghost"}
@@ -541,32 +595,62 @@ const [designReady, setDesignReady] = useState(false);
 
             {/* Content Area */}
             <div className="flex-1 relative overflow-hidden">
-                {/* ECAD View - only render when all design content is ready */}
-                {activeTab === "ecad" && designReady && (
+                {/* Schematic View */}
+                {activeTab === "sch" && (
                     <div className="absolute inset-0 z-10">
-                        {schematicContent || pcbContent ? (
-                            <ecad-viewer
-                                ref={setViewerRef}
-                                style={{ width: '100%', height: '100%' }}
-                                key={`viewer-${projectId}-${schematicContent?.length || 0}-${pcbContent?.length || 0}`}
-                            >
-                                {schematicContent && <EcadBlob filename="root.kicad_sch" content={schematicContent} />}
-                                {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
-                                {pcbContent && <EcadBlob filename="board.kicad_pcb" content={pcbContent} />}
-                            </ecad-viewer>
+                        {schematicContentLoaded ? (
+                            schematicContent ? (
+                                <ecad-viewer
+                                    ref={setSchematicViewerRef}
+                                    style={{ width: '100%', height: '100%' }}
+                                    key={`schematic-viewer-${projectId}-${schematicContent.length}`}
+                                >
+                                    <EcadBlob filename="root.kicad_sch" content={schematicContent} />
+                                    {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
+                                </ecad-viewer>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    <p>No schematic files found.</p>
+                                </div>
+                            )
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <p>No design files found.</p>
+                                <p>Loading schematic...</p>
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* Comment Overlay - always rendered but only visible on ecad tab */}
-                {activeTab === "ecad" && schematicContent || pcbContent ? (
+                {/* PCB View */}
+                {activeTab === "pcb" && (
+                    <div className="absolute inset-0 z-10">
+                        {pcbContentLoaded ? (
+                            pcbContent ? (
+                                <ecad-viewer
+                                    ref={setPcbViewerRef}
+                                    style={{ width: '100%', height: '100%' }}
+                                    key={`pcb-viewer-${projectId}-${pcbContent.length}`}
+                                >
+                                    <EcadBlob filename="board.kicad_pcb" content={pcbContent} />
+                                </ecad-viewer>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    <p>No PCB files found.</p>
+                                </div>
+                            )
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                                <p>Loading PCB...</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Comment Overlay - only visible on sch/pcb tabs */}
+                {(activeTab === "sch" || activeTab === "pcb") && (schematicContent || pcbContent) ? (
                     <CommentOverlay
                         comments={overlayComments}
-                        viewerRef={viewerRef}
+                        viewerRef={activeTab === "sch" ? schematicViewerRef : pcbViewerRef}
                         onPinClick={() => {
                             setShowCommentPanel(true);
                         }}
