@@ -22,7 +22,7 @@ class Project(BaseModel):
 
 # PROJECTS_ROOT is where imported projects are stored.
 # In Docker, this should be a persistent volume mount.
-PROJECTS_ROOT = os.environ.get("KICAD_PROJECTS_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../project-database")))
+PROJECTS_ROOT = os.environ.get("KICAD_PROJECTS_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/projects")))
 
 # MONOREPOS_ROOT is where monorepos are cloned (shared across sub-projects)
 MONOREPOS_ROOT = os.path.join(PROJECTS_ROOT, "monorepos")
