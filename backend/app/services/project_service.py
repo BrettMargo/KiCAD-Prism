@@ -17,6 +17,8 @@ class Project(BaseModel):
     sub_path: Optional[str] = None  # Relative path within parent repo
     parent_repo: Optional[str] = None  # Parent monorepo name
     repo_url: Optional[str] = None  # Original Git URL
+    import_type: Optional[str] = None  # "type1" or "type2_subproject"
+    parent_repo_path: Optional[str] = None  # Path to parent repo for Type-2
 
 # PROJECTS_ROOT is where imported projects are stored.
 # In Docker, this should be a persistent volume mount.
@@ -83,14 +85,8 @@ def register_project(project_id: str, name: str, path: str, repo_url: str,
 def get_registered_projects() -> List[Project]:
     """
     Get all registered projects from the registry.
-    Falls back to folder scanning if registry is empty (backward compatibility).
     """
     registry = _load_project_registry()
-    
-    # If registry is empty, scan folders (backward compatibility)
-    if not registry:
-        return _scan_folder_projects()
-    
     projects = []
     for project_id, data in registry.items():
         # Verify the project path still exists
@@ -113,75 +109,10 @@ def get_registered_projects() -> List[Project]:
             thumbnail_url=f"/api/projects/{project_id}/thumbnail",
             sub_path=data.get("sub_path"),
             parent_repo=data.get("parent_repo"),
-            repo_url=data.get("repo_url")
+            repo_url=data.get("repo_url"),
+            import_type=data.get("import_type"),
+            parent_repo_path=data.get("parent_repo_path") if data.get("import_type") == "type2_subproject" else None
         ))
-    
-    return projects
-
-def _scan_folder_projects() -> List[Project]:
-    """Legacy: Scan PROJECTS_ROOT and monorepos for project folders."""
-    projects = []
-    
-    # Scan root directory (excluding monorepos)
-    if os.path.exists(PROJECTS_ROOT):
-        for item in os.listdir(PROJECTS_ROOT):
-            item_path = os.path.join(PROJECTS_ROOT, item)
-            if os.path.isdir(item_path) and item != "monorepos":
-                try:
-                    mtime = os.path.getmtime(item_path)
-                    last_modified = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
-                except:
-                    last_modified = "Unknown"
-
-                projects.append(Project(
-                    id=item,
-                    name=item,
-                    description=f"Project {item}",
-                    path=item_path,
-                    last_modified=last_modified,
-                    thumbnail_url=f"/api/projects/{item}/thumbnail"
-                ))
-    
-    # Scan monorepos for sub-projects
-    if os.path.exists(MONOREPOS_ROOT):
-        for repo_name in os.listdir(MONOREPOS_ROOT):
-            repo_path = os.path.join(MONOREPOS_ROOT, repo_name)
-            if not os.path.isdir(repo_path) or repo_name.startswith('.'):
-                continue
-                
-            # Find all .kicad_pro files in this monorepo
-            for root, dirs, files in os.walk(repo_path):
-                # Skip .git and archive directories
-                if '.git' in dirs:
-                    dirs.remove('.git')
-                # Skip archive/old/backup folders
-                archive_dirs = [d for d in dirs if d.lower() in ['archive', 'archived', 'old', 'backup', 'backups', 'obsolete']]
-                for ad in archive_dirs:
-                    dirs.remove(ad)
-                    
-                pro_files = [f for f in files if f.endswith('.kicad_pro')]
-                if pro_files:
-                    # Found a KiCAD project
-                    project_dir = os.path.basename(root)
-                    relative_path = os.path.relpath(root, repo_path)
-                    safe_id = f"{repo_name}-{relative_path.replace('/', '-').replace(' ', '_')}"
-                    
-                    try:
-                        mtime = os.path.getmtime(root)
-                        last_modified = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
-                    except:
-                        last_modified = "Unknown"
-                    
-                    projects.append(Project(
-                        id=safe_id,
-                        name=project_dir,
-                        description=f"{repo_name} / {relative_path}",
-                        path=root,
-                        last_modified=last_modified,
-                        thumbnail_url=f"/api/projects/{safe_id}/thumbnail",
-                        sub_path=relative_path,
-                        parent_repo=repo_name
-                    ))
     
     return projects
 
@@ -251,6 +182,20 @@ def _run_clone_job(job_id: str, repo_url: str, selected_paths: Optional[List[str
                 # Generate unique project ID
                 safe_name = sub_path.replace('/', '-').replace(' ', '_')
                 project_id = f"{project_name}-{safe_name}"
+                
+                # Check for duplicate ID
+                registry = _load_project_registry()
+                if project_id in registry:
+                    existing_path = registry[project_id].get("path", "")
+                    if existing_path != os.path.join(target_path, sub_path):
+                        # Different project with same ID - add numeric suffix
+                        suffix = 1
+                        original_id = project_id
+                        while f"{original_id}-{suffix}" in registry:
+                            suffix += 1
+                        project_id = f"{original_id}-{suffix}"
+                        job['logs'].append(f"Warning: ID collision detected, using {project_id}")
+                
                 full_project_path = os.path.join(target_path, sub_path)
                 
                 # Get project name from the .kicad_pro file
@@ -278,8 +223,23 @@ def _run_clone_job(job_id: str, repo_url: str, selected_paths: Optional[List[str
             
             if pro_files:
                 # Root has KiCAD project
+                project_id = project_name
+                
+                # Check for duplicate ID
+                registry = _load_project_registry()
+                if project_id in registry:
+                    existing_path = registry[project_id].get("path", "")
+                    if existing_path != target_path:
+                        # Different project with same ID - add numeric suffix
+                        suffix = 1
+                        original_id = project_id
+                        while f"{original_id}-{suffix}" in registry:
+                            suffix += 1
+                        project_id = f"{original_id}-{suffix}"
+                        job['logs'].append(f"Warning: ID collision detected, using {project_id}")
+                
                 register_project(
-                    project_id=project_name,
+                    project_id=project_id,
                     name=project_name,
                     path=target_path,
                     repo_url=repo_url,
@@ -287,7 +247,7 @@ def _run_clone_job(job_id: str, repo_url: str, selected_paths: Optional[List[str
                     parent_repo=None,
                     description=f"Project {project_name}"
                 )
-                job['project_id'] = project_name
+                job['project_id'] = project_id
             else:
                 # No KiCAD files at root - register as monorepo container
                 job['logs'].append("Warning: No .kicad_pro files found at root level")
@@ -588,13 +548,31 @@ def delete_project(project_id: str) -> bool:
     project_data = registry[project_id]
     project_path = project_data.get("path")
     parent_repo = project_data.get("parent_repo")
+    import_type = project_data.get("import_type")
     
     # Remove from registry
     del registry[project_id]
     _save_project_registry(registry)
     
-    # For standalone projects (not in monorepo), delete the directory
-    if not parent_repo and project_path and os.path.exists(project_path):
+    if import_type == "type2_subproject" and parent_repo:
+        # Check if there are any remaining subprojects for this parent repo
+        remaining_subprojects = [
+            p for p in registry.values()
+            if p.get("parent_repo") == parent_repo and p.get("import_type") == "type2_subproject"
+        ]
+        
+        # If no remaining subprojects, delete the parent repo directory
+        if not remaining_subprojects and project_path:
+            # Get parent repo path (go up one level from subproject)
+            parent_repo_path = os.path.dirname(project_path)
+            if os.path.exists(parent_repo_path):
+                try:
+                    shutil.rmtree(parent_repo_path)
+                    print(f"Deleted Type-2 parent repo: {parent_repo_path}")
+                except Exception as e:
+                    print(f"Warning: Failed to delete parent repo directory {parent_repo_path}: {e}")
+    elif not parent_repo and project_path and os.path.exists(project_path):
+        # For Type-1 projects (standalone), delete the directory
         try:
             shutil.rmtree(project_path)
         except Exception as e:

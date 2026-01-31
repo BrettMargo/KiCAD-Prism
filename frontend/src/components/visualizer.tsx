@@ -15,37 +15,13 @@ import type { Comment, CommentContext } from "@/types/comments";
 // Wrapper to inject content via property instead of attribute to avoid size limits/parsing
 const EcadBlobWrapper = ({ filename, content }: { filename: string, content: string }) => {
     const ref = React.useRef<HTMLElement>(null);
-    const contentRef = React.useRef(content);
-    const filenameRef = React.useRef(filename);
-
-    // Keep refs updated with latest values
-    contentRef.current = content;
-    filenameRef.current = filename;
 
     React.useLayoutEffect(() => {
-        const setContent = () => {
-            if (ref.current) {
-                (ref.current as any).content = contentRef.current;
-                (ref.current as any).filename = filenameRef.current;
-            }
-        };
-        
-        // Set immediately
-        setContent();
-        
-        // Also set after a small delay to ensure parent viewer is ready
-        const timeoutId = setTimeout(setContent, 0);
-        
-        return () => clearTimeout(timeoutId);
-    }, []);
-    
-    // Update when content/filename changes
-    React.useEffect(() => {
         if (ref.current) {
             (ref.current as any).content = content;
             (ref.current as any).filename = filename;
         }
-    }, [content, filename]);
+    }, [filename, content]);
 
     return <ecad-blob ref={ref} filename={filename} />;
 };
@@ -530,19 +506,27 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
 
             {/* Content Area */}
             <div className="flex-1 relative overflow-hidden">
-                {/* ECAD View - always mounted but visibility toggled */}
-                <div className={`absolute inset-0 ${activeTab === "ecad" ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}`}>
+                {/* ECAD View */}
+                <div className={`absolute inset-0 ${activeTab === "ecad" ? "z-10" : "z-0 hidden"}`}>
                     {schematicContent || pcbContent ? (
                         <>
                             <ecad-viewer
                                 ref={setViewerRef}
                                 style={{ width: '100%', height: '100%' }}
-                                key={`viewer-${projectId}`}
                             >
                                 {schematicContent && <EcadBlobWrapper filename="root.kicad_sch" content={schematicContent} />}
                                 {subsheets.map(s => <EcadBlobWrapper key={s.filename} filename={s.filename} content={s.content} />)}
                                 {pcbContent && <EcadBlobWrapper filename="board.kicad_pcb" content={pcbContent} />}
                             </ecad-viewer>
+
+                            <CommentOverlay
+                                comments={overlayComments}
+                                viewerRef={viewerRef}
+                                onPinClick={() => {
+                                    setShowCommentPanel(true);
+                                    // optional: focus comment in panel
+                                }}
+                            />
                         </>
                     ) : (
                         <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -550,17 +534,6 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                         </div>
                     )}
                 </div>
-
-                {/* Comment Overlay - always rendered but only visible on ecad tab */}
-                {activeTab === "ecad" && schematicContent || pcbContent ? (
-                    <CommentOverlay
-                        comments={overlayComments}
-                        viewerRef={viewerRef}
-                        onPinClick={() => {
-                            setShowCommentPanel(true);
-                        }}
-                    />
-                ) : null}
 
                 {/* 3D View */}
                 {activeTab === "3d" && (

@@ -3,9 +3,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from app.services import project_service, file_service, path_config_service
-from app.services.git_service import get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit, sync_with_remote
+from app.services.git_service import (get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit, get_releases_filtered, get_commits_list_filtered, get_file_from_commit_with_prefix)
 from app.services.path_config_service import PathConfig
-from app.services import project_discovery_service
 
 router = APIRouter()
 
@@ -21,9 +20,8 @@ class Monorepo(BaseModel):
 
 @router.get("/", response_model=List[project_service.Project])
 async def list_projects():
-    # Return only standalone projects (not monorepo sub-projects)
-    all_projects = project_service.get_registered_projects()
-    return [p for p in all_projects if p.parent_repo is None]
+    """Return all registered projects (both Type-1 and Type-2)."""
+    return project_service.get_registered_projects()
 
 @router.get("/monorepos", response_model=List[Monorepo])
 async def list_monorepos():
@@ -168,71 +166,90 @@ async def search_projects(q: str = ""):
     
     return {"results": results}
 
+from app.services import project_import_service
+
+class AnalyzeRequest(BaseModel):
+    url: str
+
 class ImportRequest(BaseModel):
     url: str
+    import_type: str  # "type1" or "type2"
     selected_paths: Optional[List[str]] = None
 
-class DiscoverRequest(BaseModel):
-    url: str
-
-@router.post("/discover")
-async def discover_projects(request: DiscoverRequest):
+@router.post("/analyze")
+async def analyze_repository(request: AnalyzeRequest):
     """
-    Scan a repository to discover KiCAD projects before importing.
-    Returns a list of all .kicad_pro files found in the repo.
+    Analyze a repository to determine import type and discover KiCAD projects.
+    Returns Type-1 or Type-2 classification and project list.
     """
     try:
-        result = project_discovery_service.clone_and_discover(request.url)
-        return {
-            "repo_url": result.repo_url,
+        result = project_import_service.analyze_repository(request.url)
+        
+        response = {
             "repo_name": result.repo_name,
-            "project_count": len(result.projects),
+            "repo_url": result.repo_url,
+            "import_type": result.import_type,
             "projects": [
                 {
                     "name": p.name,
                     "relative_path": p.relative_path,
-                    "schematic_count": p.schematic_count,
-                    "pcb_count": p.pcb_count,
-                    "description": p.description
+                    "has_schematic": p.has_schematic,
+                    "has_pcb": p.has_pcb
                 }
                 for p in result.projects
             ]
         }
+        
+        # Cleanup temp directory after analysis
+        project_import_service.cleanup_analysis_temp(result)
+        
+        return response
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Discovery failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 @router.post("/import")
 async def import_project(request: ImportRequest):
     """
     Start an async project import job.
+    For Type-1: imports single project at root.
+    For Type-2: imports selected subprojects.
     """
     try:
-        job_id = project_service.start_import_job(request.url, request.selected_paths)
-        return {"job_id": job_id}
+        job_id = project_import_service.start_import_job(
+            repo_url=request.url,
+            import_type=request.import_type,
+            selected_paths=request.selected_paths
+        )
+        return {"job_id": job_id, "status": "started"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/import/{job_id}")
-async def get_import_status(job_id: str):
+@router.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
     """
-    Deprecated: Use /jobs/{job_id} instead.
+    Get the status of an import job.
     """
-    status = project_service.get_job_status(job_id)
+    status = project_import_service.get_job_status(job_id)
     if not status:
         raise HTTPException(status_code=404, detail="Job not found")
     return status
 
-@router.get("/jobs/{job_id}")
-async def get_job_status(job_id: str):
+@router.post("/{project_id}/sync")
+async def sync_project_endpoint(project_id: str):
     """
-    Get the status of any background job (import or workflow).
+    Sync project repository with remote.
+    Type-1: pulls the project repo.
+    Type-2: pulls the parent repo.
     """
-    status = project_service.get_job_status(job_id)
-    if not status:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return status
+    result = project_import_service.sync_project(project_id)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
 
 class WorkflowRequest(BaseModel):
     type: str # design, manufacturing, render
@@ -351,6 +368,7 @@ async def get_project_readme(project_id: str, commit: str = None):
     """
     Get README content from project root.
     If commit is provided, fetch from that commit; otherwise use working directory.
+    For Type-2 projects, uses parent repo with relative path prefix.
     """
     projects = project_service.get_registered_projects()
     project = next((p for p in projects if p.id == project_id), None)
@@ -364,7 +382,12 @@ async def get_project_readme(project_id: str, commit: str = None):
     # If viewing a specific commit, use Git
     if commit:
         try:
-            content = get_file_from_commit(project.path, commit, readme_filename)
+            # For Type-2 projects, use parent repo path with relative prefix
+            if project.import_type == "type2_subproject":
+                repo_path = project.parent_repo_path or os.path.dirname(project.path)
+                content = get_file_from_commit_with_prefix(repo_path, commit, readme_filename, project.sub_path)
+            else:
+                content = get_file_from_commit(project.path, commit, readme_filename)
             return {"content": content}
         except HTTPException:
             raise
@@ -432,6 +455,7 @@ async def get_doc_file_content(project_id: str, path: str, commit: str = None):
     """
     Get markdown file content from documentation folder.
     If commit is provided, fetch from that commit; otherwise use working directory.
+    For Type-2 projects, uses parent repo with relative path prefix.
     """
     projects = project_service.get_registered_projects()
     project = next((p for p in projects if p.id == project_id), None)
@@ -446,7 +470,14 @@ async def get_doc_file_content(project_id: str, path: str, commit: str = None):
     if commit:
         try:
             file_path = f"{docs_path}/{path}"
-            content = get_file_from_commit(project.path, commit, file_path)
+            # For Type-2 projects, use parent repo path with relative prefix
+            if project.import_type == "type2_subproject":
+                repo_path = project.parent_repo_path or os.path.dirname(project.path)
+                # Prepend relative_path to the docs path
+                relative_prefix = f"{project.sub_path}/{docs_path}" if project.sub_path else docs_path
+                content = get_file_from_commit_with_prefix(repo_path, commit, path, relative_prefix)
+            else:
+                content = get_file_from_commit(project.path, commit, file_path)
             return {"content": content, "path": path}
         except HTTPException:
             raise
@@ -478,54 +509,43 @@ async def get_doc_file_content(project_id: str, path: str, commit: str = None):
 async def get_project_releases(project_id: str):
     """
     Get list of Git releases/tags for a project.
+    For Type-2 projects, uses parent repo with subproject file tracking.
     """
     projects = project_service.get_registered_projects()
     project = next((p for p in projects if p.id == project_id), None)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    releases = get_releases(project.path)
+    # For Type-2 projects, use parent repo path and relative path (sub_path)
+    if project.import_type == "type2_subproject":
+        repo_path = project.parent_repo_path or os.path.dirname(project.path)
+        relative_path = project.sub_path
+        releases = get_releases_filtered(repo_path, relative_path)
+    else:
+        releases = get_releases(project.path)
+    
     return {"releases": releases}
 
 @router.get("/{project_id}/commits")
 async def get_project_commits(project_id: str, limit: int = 50):
     """
     Get list of commits for a project.
+    For Type-2 projects, shows only commits affecting the subproject.
     """
     projects = project_service.get_registered_projects()
     project = next((p for p in projects if p.id == project_id), None)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    commits = get_commits_list(project.path, limit)
-    return {"commits": commits}
-
-
-@router.post("/{project_id}/sync")
-async def sync_project(project_id: str):
-    """
-    Sync project repository with remote.
-    
-    For monorepo sub-projects, syncs the parent repository.
-    Performs a git fetch and hard reset to match the remote branch state.
-    This will discard any local changes not pushed to remote.
-    """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # If this is a sub-project in a monorepo, sync the parent repo
-    if project.parent_repo:
-        # Construct parent repo path
-        sync_path = os.path.join(project_service.MONOREPOS_ROOT, project.parent_repo)
-        if not os.path.exists(sync_path):
-            raise HTTPException(status_code=404, detail="Parent repository not found")
+    # For Type-2 projects, use parent repo path and filter by relative path (sub_path)
+    if project.import_type == "type2_subproject":
+        repo_path = project.parent_repo_path or os.path.dirname(project.path)
+        relative_path = project.sub_path
+        commits = get_commits_list_filtered(repo_path, relative_path, limit)
     else:
-        sync_path = project.path
+        commits = get_commits_list(project.path, limit)
     
-    result = sync_with_remote(sync_path)
-    return result
+    return {"commits": commits}
 
 
 @router.get("/{project_id}/schematic")

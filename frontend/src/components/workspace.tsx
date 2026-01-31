@@ -6,10 +6,9 @@ import { SidebarTree } from "./sidebar-tree";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Plus, Search, ChevronRight, Folder, Clock } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { MultiProjectImportDialog } from "./multi-project-import-dialog";
+import { ImportDialog } from "./import-dialog";
 import { cn } from "@/lib/utils";
 
 interface FolderCardProps {
@@ -91,11 +90,6 @@ export function Workspace() {
 
   // Import Dialog State
   const [isImportOpen, setIsImportOpen] = useState(false);
-  const [importUrl, setImportUrl] = useState("");
-  const [isImporting, setIsImporting] = useState(false);
-  const [importStatus, setImportStatus] = useState({ message: "", percent: 0 });
-  const [isDiscovering, setIsDiscovering] = useState(false);
-  const [showMultiProjectDialog, setShowMultiProjectDialog] = useState(false);
 
   // Recent projects (last 3 opened) - stored in localStorage
   const [recentProjectIds, setRecentProjectIds] = useState<string[]>(() => {
@@ -178,96 +172,6 @@ export function Workspace() {
       setBreadcrumb({});
     }
   }, [selectedMonorepo, selectedMonorepoPath]);
-
-  const handleImport = async () => {
-    if (!importUrl) return;
-
-    setIsDiscovering(true);
-
-    try {
-      const discoverRes = await fetch("/api/projects/discover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: importUrl }),
-      });
-
-      if (!discoverRes.ok) {
-        const errorData = await discoverRes.json();
-        throw new Error(errorData.detail || "Failed to discover projects");
-      }
-
-      const discovery = await discoverRes.json();
-
-      if (discovery.project_count > 1) {
-        setIsDiscovering(false);
-        setShowMultiProjectDialog(true);
-        setIsImportOpen(false);
-      } else if (discovery.project_count === 1) {
-        setIsDiscovering(false);
-        await startImport([]);
-      } else {
-        setIsDiscovering(false);
-        alert("No KiCAD projects found in this repository");
-      }
-    } catch (err: any) {
-      setIsDiscovering(false);
-      alert(err.message);
-    }
-  };
-
-  const startImport = async (selectedPaths: string[]) => {
-    setIsImporting(true);
-    setImportStatus({ message: "Starting...", percent: 0 });
-
-    try {
-      const startRes = await fetch("/api/projects/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: importUrl, selected_paths: selectedPaths }),
-      });
-
-      if (!startRes.ok) {
-        const errorData = await startRes.json();
-        throw new Error(errorData.detail || "Failed to start import");
-      }
-
-      const { job_id } = await startRes.json();
-
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/projects/import/${job_id}`);
-          if (!statusRes.ok) return;
-
-          const status = await statusRes.json();
-
-          if (status.status === "completed") {
-            clearInterval(pollInterval);
-            setIsImporting(false);
-            setIsImportOpen(false);
-            setShowMultiProjectDialog(false);
-            setImportUrl("");
-            setImportStatus({ message: "", percent: 0 });
-            fetchData();
-          } else if (status.status === "failed") {
-            clearInterval(pollInterval);
-            setIsImporting(false);
-            alert(`Import Failed: ${status.error}`);
-            setImportStatus({ message: "", percent: 0 });
-          } else {
-            setImportStatus({
-              message: status.message,
-              percent: status.percent || 0,
-            });
-          }
-        } catch (e) {
-          console.error("Poll error", e);
-        }
-      }, 1000);
-    } catch (err: any) {
-      setIsImporting(false);
-      alert(err.message);
-    }
-  };
 
   const handleSelectProject = (project: Project) => {
     setSelectedProjectId(project.id);
@@ -479,62 +383,13 @@ export function Workspace() {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Import Project</DialogTitle>
-                <DialogDescription>
-                  Enter the URL of a GitHub repository containing a KiCAD project.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="url" className="text-right">
-                    GitHub URL
-                  </Label>
-                  <Input
-                    id="url"
-                    value={importUrl}
-                    onChange={(e) => setImportUrl(e.target.value)}
-                    placeholder="https://github.com/username/repo"
-                    className="col-span-3"
-                    disabled={isImporting}
-                  />
-                </div>
+      <ImportDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        onImportComplete={fetchData}
+      />
 
-                {isImporting && (
-                  <div className="space-y-2 mt-4">
-                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all duration-300 ease-out"
-                        style={{ width: `${importStatus.percent}%` }}
-                      />
-                    </div>
-                    <p className="text-sm text-center text-muted-foreground">
-                      {importStatus.message}
-                    </p>
-                  </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsImportOpen(false)} disabled={isImporting}>
-                  Cancel
-                </Button>
-                <Button onClick={handleImport} disabled={isDiscovering || !importUrl}>
-                  {isDiscovering ? "Scanning..." : "Import"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <MultiProjectImportDialog
-            repoUrl={importUrl}
-            open={showMultiProjectDialog}
-            onOpenChange={setShowMultiProjectDialog}
-            onImport={startImport}
-          />
-
-          {loading ? (
+      {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <Skeleton key={i} className="h-[280px] rounded-xl" />

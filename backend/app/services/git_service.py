@@ -17,6 +17,140 @@ class CommitInfo(BaseModel):
     author: str
     date: str
 
+
+def get_commits_list_filtered(repo_path: str, relative_path: str = None, limit: int = 50):
+    """
+    Get list of commits from repository, optionally filtered to a subdirectory.
+    For Type-2 projects, relative_path scopes commits to the subproject.
+    """
+    if not os.path.exists(repo_path):
+        raise HTTPException(status_code=404, detail=f"Repository not found at {repo_path}")
+    
+    try:
+        repo = Repo(repo_path)
+        commits = []
+        
+        for commit in repo.iter_commits(max_count=limit * 3):  # Fetch more to account for filtering
+            # If relative_path provided, filter to commits that touched files under that path
+            if relative_path:
+                # Use diff to get changed files - more reliable than stats
+                changed_files = []
+                if commit.parents:
+                    # Compare with parent to get changed files
+                    diff = commit.parents[0].diff(commit)
+                    changed_files = [d.a_path or d.b_path for d in diff if d.a_path or d.b_path]
+                else:
+                    # Initial commit - list all files in tree
+                    changed_files = [item.path for item in commit.tree.traverse() if item.type == 'blob']
+                
+                # Check if any file starts with the relative_path
+                if not any(f.startswith(relative_path) for f in changed_files):
+                    continue
+            
+            commits.append({
+                "hash": commit.hexsha[:7],
+                "full_hash": commit.hexsha,
+                "author": commit.author.name,
+                "email": commit.author.email,
+                "date": datetime.datetime.fromtimestamp(commit.committed_date).isoformat(),
+                "message": commit.message.strip()
+            })
+            
+            if len(commits) >= limit:
+                break
+                
+        return commits
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git error: {str(e)}")
+
+
+def get_releases_filtered(repo_path: str, relative_path: str = None):
+    """
+    Get list of Git tags/releases from repository.
+    For Type-2 projects, shows file count under relative_path for each tag.
+    """
+    if not os.path.exists(repo_path):
+        raise HTTPException(status_code=404, detail=f"Repository not found at {repo_path}")
+    
+    try:
+        repo = Repo(repo_path)
+        releases = []
+        for tag in repo.tags:
+            commit = tag.commit
+            
+            # Count files under relative_path if provided
+            file_count = None
+            if relative_path:
+                try:
+                    tree = commit.tree
+                    target = tree / relative_path
+                    if target.type == 'tree':
+                        file_count = len(list(target.traverse()))
+                except:
+                    pass
+            
+            releases.append({
+                "tag": tag.name,
+                "commit_hash": commit.hexsha[:7],
+                "date": datetime.datetime.fromtimestamp(commit.committed_date).isoformat(),
+                "message": commit.message.strip(),
+                "subproject_files_changed": file_count
+            })
+        # Sort by date descending (newest first)
+        releases.sort(key=lambda x: x['date'], reverse=True)
+        return releases
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git error: {str(e)}")
+
+
+def get_file_from_commit_with_prefix(repo_path: str, commit_hash: str, file_path: str, relative_prefix: str = None) -> str:
+    """
+    Get file content from a specific commit.
+    For Type-2 projects, relative_prefix is prepended to file_path.
+    """
+    try:
+        repo = Repo(repo_path)
+        commit = repo.commit(commit_hash)
+        
+        # Prepend relative_prefix for Type-2 projects
+        full_path = file_path
+        if relative_prefix:
+            full_path = os.path.join(relative_prefix, file_path)
+        
+        try:
+            blob = commit.tree / full_path
+            content = blob.data_stream.read()
+            return content.decode('utf-8')
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"File {file_path} not found in commit")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="Binary file cannot be decoded")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Git error: {str(e)}")
+
+
+def file_exists_in_commit_with_prefix(repo_path: str, commit_hash: str, file_path: str, relative_prefix: str = None) -> bool:
+    """
+    Check if a file exists in a specific commit.
+    For Type-2 projects, relative_prefix is prepended to file_path.
+    """
+    try:
+        repo = Repo(repo_path)
+        commit = repo.commit(commit_hash)
+        
+        full_path = file_path
+        if relative_prefix:
+            full_path = os.path.join(relative_prefix, file_path)
+        
+        try:
+            _ = commit.tree / full_path
+            return True
+        except KeyError:
+            return False
+    except:
+        return False
+
+
 class FileContentRequest(BaseModel):
     repo_path: str = DEFAULT_REPO_PATH
     commit_sha: str
