@@ -2,7 +2,7 @@ import os
 import datetime
 import shutil
 from git import Repo, RemoteProgress
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from app.services import path_config_service
