@@ -595,56 +595,52 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
 
             {/* Content Area */}
             <div className="flex-1 relative overflow-hidden">
-                {/* Schematic View */}
-                {activeTab === "sch" && (
-                    <div className="absolute inset-0 z-10">
-                        {schematicContentLoaded ? (
-                            schematicContent ? (
-                                <ecad-viewer
-                                    ref={setSchematicViewerRef}
-                                    style={{ width: '100%', height: '100%' }}
-                                    key={`schematic-viewer-${projectId}-${schematicContent.length}`}
-                                >
-                                    <EcadBlob filename="root.kicad_sch" content={schematicContent} />
-                                    {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
-                                </ecad-viewer>
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                    <p>No schematic files found.</p>
-                                </div>
-                            )
+                {/* Schematic View - always mounted but conditionally visible */}
+                <div className={`absolute inset-0 z-10 transition-opacity duration-200 ${activeTab === "sch" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+                    {schematicContentLoaded ? (
+                        schematicContent ? (
+                            <ecad-viewer
+                                ref={setSchematicViewerRef}
+                                style={{ width: '100%', height: '100%' }}
+                                key={`schematic-viewer-${projectId}`}
+                            >
+                                <EcadBlob filename="root.kicad_sch" content={schematicContent} />
+                                {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
+                            </ecad-viewer>
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <p>Loading schematic...</p>
+                                <p>No schematic files found.</p>
                             </div>
-                        )}
-                    </div>
-                )}
+                        )
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                            <p>Loading schematic...</p>
+                        </div>
+                    )}
+                </div>
 
-                {/* PCB View */}
-                {activeTab === "pcb" && (
-                    <div className="absolute inset-0 z-10">
-                        {pcbContentLoaded ? (
-                            pcbContent ? (
-                                <ecad-viewer
-                                    ref={setPcbViewerRef}
-                                    style={{ width: '100%', height: '100%' }}
-                                    key={`pcb-viewer-${projectId}-${pcbContent.length}`}
-                                >
-                                    <EcadBlob filename="board.kicad_pcb" content={pcbContent} />
-                                </ecad-viewer>
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                    <p>No PCB files found.</p>
-                                </div>
-                            )
+                {/* PCB View - always mounted but conditionally visible */}
+                <div className={`absolute inset-0 z-10 transition-opacity duration-200 ${activeTab === "pcb" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+                    {pcbContentLoaded ? (
+                        pcbContent ? (
+                            <ecad-viewer
+                                ref={setPcbViewerRef}
+                                style={{ width: '100%', height: '100%' }}
+                                key={`pcb-viewer-${projectId}`}
+                            >
+                                <EcadBlob filename="board.kicad_pcb" content={pcbContent} />
+                            </ecad-viewer>
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <p>Loading PCB...</p>
+                                <p>No PCB files found.</p>
                             </div>
-                        )}
-                    </div>
-                )}
+                        )
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                            <p>Loading PCB...</p>
+                        </div>
+                    )}
+                </div>
 
                 {/* Comment Overlay - only visible on sch/pcb tabs */}
                 {(activeTab === "sch" || activeTab === "pcb") && (schematicContent || pcbContent) ? (
