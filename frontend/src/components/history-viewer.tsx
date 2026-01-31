@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitCommit, Tag, Calendar, User, Clock, Copy, Eye, Check, CircuitBoard } from "lucide-react";
+import { GitCommit, Tag, Eye, Check, Copy, User, Clock, Calendar } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { VisualDiffViewer } from "./visual-diff-viewer";
@@ -121,7 +121,6 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
     const [loading, setLoading] = useState(true);
     const [selectedCommits, setSelectedCommits] = useState<string[]>([]);
     const [showDiff, setShowDiff] = useState(false);
-    const [isAdvanced, setIsAdvanced] = useState(false);
 
     // Filter commits to find selected ones and determining newer/older
     const getSortedSelectedCommits = () => {
@@ -203,10 +202,8 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
                     projectId={projectId}
                     commit1={diffPair.newer.full_hash}
                     commit2={diffPair.older.full_hash}
-                    advanced={isAdvanced}
                     onClose={() => {
                         setShowDiff(false);
-                        setIsAdvanced(false);
                     }}
                 />
             )}
@@ -256,21 +253,9 @@ export function HistoryViewer({ projectId, onViewCommit }: HistoryViewerProps) {
                     {selectedCommits.length === 2 && (
                         <div className="flex items-center gap-2">
                             <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    setIsAdvanced(true);
-                                    setShowDiff(true);
-                                }}
-                            >
-                                <CircuitBoard className="h-4 w-4 mr-2" />
-                                Advanced Diff
-                            </Button>
-                            <Button
                                 variant="default"
                                 size="sm"
                                 onClick={() => {
-                                    setIsAdvanced(false);
                                     setShowDiff(true);
                                 }}
                             >

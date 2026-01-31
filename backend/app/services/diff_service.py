@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Optional, List, Dict
 from app.services.project_service import get_registered_projects
-from app.services import bom_diff_service, advanced_diff_service
+from app.services import bom_diff_service
 
 # Global job store
 # Structure: { job_id: { ... } }
@@ -206,7 +206,7 @@ def _colorize_svg(svg_path: Path, color: str):
         
     svg_path.write_text(content, encoding="utf-8")
 
-def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: str, advanced: bool = False):
+def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: str):
     """Execute diff generation in background."""
     job = diff_jobs[job_id]
     
@@ -254,32 +254,6 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
         job['logs'].append(f"Snapshotting commit {commit2}...")
         _snapshot_commit(project_path, commit2, c2_dir)
 
-        if advanced:
-            # 2. Advanced Composite Generation
-            job['logs'].append("Generating advanced composite schematic...")
-            try:
-                old_sch = next(c2_dir.rglob("*.kicad_sch"), None)
-                new_sch = next(c1_dir.rglob("*.kicad_sch"), None)
-                if new_sch:
-                    composite_sch_path = job_dir / "composite.kicad_sch"
-                    advanced_diff_service.generate_composite_sch(old_sch, new_sch, composite_sch_path)
-                    manifest["advanced_sch"] = "composite.kicad_sch"
-                    job['logs'].append(f"Composite schematic generated: {composite_sch_path.name}")
-                else:
-                    job['logs'].append("No schematic found in new commit, skipping advanced diff.")
-
-                # Composite PCB
-                old_pcb = next(c2_dir.rglob("*.kicad_pcb"), None)
-                new_pcb = next(c1_dir.rglob("*.kicad_pcb"), None)
-                if new_pcb:
-                    composite_pcb_path = job_dir / "composite.kicad_pcb"
-                    advanced_diff_service.generate_composite_pcb(old_pcb, new_pcb, composite_pcb_path)
-                    manifest["advanced_pcb"] = "composite.kicad_pcb"
-                    job['logs'].append(f"Composite PCB generated: {composite_pcb_path.name}")
-                else:
-                    job['logs'].append("No PCB found in new commit, skipping advanced diff.")
-            except Exception as e:
-                job['logs'].append(f"Failed to generate composite files: {e}")
 
         # We need to process both commits to ensure we catch files present in one but not other?
         # For simplicity, we scan both, but usually we iterate over the "New" structure 
@@ -440,7 +414,7 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
             (job_dir / "logs.txt").write_text("\n".join(job['logs']), encoding="utf-8")
 
 
-def start_diff_job(project_id: str, commit1: str, commit2: str, advanced: bool = False) -> str:
+def start_diff_job(project_id: str, commit1: str, commit2: str) -> str:
     """Start async diff job."""
     job_id = str(uuid.uuid4())
     diff_jobs[job_id] = {
@@ -458,7 +432,7 @@ def start_diff_job(project_id: str, commit1: str, commit2: str, advanced: bool =
     
     thread = threading.Thread(
         target=_run_diff_generation,
-        args=(job_id, project_id, commit1, commit2, advanced)
+        args=(job_id, project_id, commit1, commit2)
     )
     thread.daemon = True
     thread.start()
