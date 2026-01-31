@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import * as React from "react";
 import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -11,6 +12,23 @@ import { CommentPanel } from "./comment-panel";
 import type { User } from "@/types/auth";
 import type { Comment, CommentContext } from "@/types/comments";
 
+// Wrapper to set blob properties immediately via useLayoutEffect
+const EcadBlob = ({ filename, content }: { filename: string; content: string }) => {
+    const ref = React.useRef<HTMLElement>(null);
+
+    // Use layout effect to set properties immediately after mount
+    React.useLayoutEffect(() => {
+        if (ref.current) {
+            (ref.current as any).filename = filename;
+            (ref.current as any).content = content;
+        }
+    }, [filename, content]);
+
+    return React.createElement('ecad-blob', { ref });
+};
+
+
+
 interface VisualizerProps {
     projectId: string;
     user: User | null;
@@ -19,7 +37,15 @@ interface VisualizerProps {
 type VisualizerTab = "ecad" | "3d" | "ibom";
 
 export function Visualizer({ projectId, user }: VisualizerProps) {
-    // State declarations must come before callbacks that use them
+    const [viewerElement, setViewerElement] = useState<HTMLElement | null>(null);
+    const viewerRef = useRef<HTMLElement | null>(null);
+
+    // Callback ref to sync state and ref
+    const setViewerRef = useCallback((node: HTMLElement | null) => {
+        viewerRef.current = node;
+        setViewerElement(node);
+    }, []);
+
     const [activeTab, setActiveTab] = useState<VisualizerTab>("ecad");
     const [schematicContent, setSchematicContent] = useState<string | null>(null);
     const [subsheets, setSubsheets] = useState<{ filename: string, content: string }[]>([]);
@@ -28,49 +54,9 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     const [ibomUrl, setIbomUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [_error, setError] = useState<Record<string, string>>({});
-    const [blobsCreated, setBlobsCreated] = useState(false);
 
-    // We use a state for the viewer element to ensure the effect re-runs when it mounts
-    const [viewerElement, setViewerElement] = useState<HTMLElement | null>(null);
-    const viewerRef = useRef<HTMLElement | null>(null);
-
-    // Callback ref to sync state and ref, and create blobs synchronously
-    const setViewerRef = useCallback((node: HTMLElement | null) => {
-        console.log('[Visualizer] setViewerRef called with', node);
-        viewerRef.current = node;
-        setViewerElement(node);
-        
-        // Create blobs synchronously BEFORE viewer's connectedCallback fires
-        if (node && !blobsCreated && (schematicContent || pcbContent)) {
-            console.log('[Visualizer] Creating blobs synchronously');
-            
-            const createBlob = (filename: string, content: string) => {
-                try {
-                    const blob = document.createElement('ecad-blob');
-                    (blob as any).filename = filename;
-                    (blob as any).content = content;
-                    node.appendChild(blob);
-                    console.log(`[Visualizer] Created blob: ${filename}`);
-                } catch (e) {
-                    console.log(`[Visualizer] DOMException suppressed for ${filename}`);
-                }
-            };
-            
-            if (schematicContent) {
-                createBlob('root.kicad_sch', schematicContent);
-            }
-            subsheets.forEach(s => {
-                createBlob(s.filename, s.content);
-            });
-            if (pcbContent) {
-                createBlob('board.kicad_pcb', pcbContent);
-            }
-            
-            setBlobsCreated(true);
-        }
-    }, [schematicContent, pcbContent, subsheets, blobsCreated]);
-
-    // Comment state
+    // Track when all design content is ready
+const [designReady, setDesignReady] = useState(false);
     const [comments, setComments] = useState<Comment[]>([]);
     const [activeContext, setActiveContext] = useState<CommentContext>("PCB");
     const [activePage, setActivePage] = useState<string>("root.kicad_sch");
@@ -85,27 +71,10 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     const [showPushDialog, setShowPushDialog] = useState(false);
     const [commitMessage, setCommitMessage] = useState("");
 
-    // Loading state for subsheets
-    const [subsheetsLoading, setSubsheetsLoading] = useState(false);
-
-    // Wait for custom elements to be defined
-    const [elementsReady, setElementsReady] = useState(false);
-    useEffect(() => {
-        console.log('[Visualizer] Waiting for custom elements to be defined...');
-        Promise.all([
-            customElements.whenDefined('ecad-viewer'),
-            customElements.whenDefined('ecad-blob')
-        ]).then(() => {
-            console.log('[Visualizer] Custom elements defined!');
-            setElementsReady(true);
-        });
-    }, []);
-
     // Initial Data Fetch
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
-            setSubsheetsLoading(false);
             const baseUrl = `/api/projects/${projectId}`;
 
             try {
@@ -121,10 +90,11 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 ]);
 
                 // Handle Schematic
+                let schematicText: string | null = null;
                 if (schRes.status === "fulfilled" && schRes.value.ok) {
-                    setSchematicContent(await schRes.value.text());
+                    schematicText = await schRes.value.text();
+                    setSchematicContent(schematicText);
                     // Try fetch subsheets
-                    setSubsheetsLoading(true);
                     try {
                         const subsheetsRes = await fetch(`${baseUrl}/schematic/subsheets`);
                         if (subsheetsRes.ok) {
@@ -142,8 +112,6 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                         }
                     } catch (e) {
                         console.warn("Subsheets fetch failed", e);
-                    } finally {
-                        setSubsheetsLoading(false);
                     }
                 } else {
                     setError(prev => ({ ...prev, schematic: "Schematic not found" }));
@@ -152,11 +120,13 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 // Handle PCB
                 if (pcbRes.status === "fulfilled" && pcbRes.value.ok) {
                     setPcbContent(await pcbRes.value.text());
-                    setActiveContext("PCB"); // Default preference if available (often main view)
+                    setActiveContext("PCB");
                 } else {
-                    // if no PCB, SCH will be default from logic below
                     setError(prev => ({ ...prev, pcb: "PCB not found" }));
                 }
+
+                // All design content is now set - mark ready
+                setDesignReady(true);
 
                 // Handle 3D
                 // Strategy: favor a .glb found in Design-Outputs/3DModel for better viewer compatibility
@@ -203,13 +173,12 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         fetchData();
     }, [projectId]);
 
-    // Update active context preference - only on initial load, not after
+    // Reset design ready when project changes
     useEffect(() => {
-        if (!loading && !pcbContent && schematicContent) {
-            setActiveContext("SCH");
-        }
-    }, [loading, pcbContent, schematicContent]);
+        setDesignReady(false);
+    }, [projectId]);
 
+    // Event Listeners for ecad-viewer
     // Event Listeners for ecad-viewer
     useEffect(() => {
         const viewer = viewerElement;
@@ -540,40 +509,37 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
 
             {/* Content Area */}
             <div className="flex-1 relative overflow-hidden">
-                {/* ECAD View */}
-                <div className={`absolute inset-0 ${activeTab === "ecad" ? "z-10" : "z-0 hidden"}`}>
-                    {(() => {
-                        const shouldRender = elementsReady && (schematicContent || pcbContent) && !subsheetsLoading;
-                        console.log('[Visualizer] ECAD View render check:', {
-                            elementsReady,
-                            hasSchematic: !!schematicContent,
-                            hasPcb: !!pcbContent,
-                            subsheetsLoading,
-                            shouldRender
-                        });
-                        return shouldRender;
-                    })() ? (
-                        <>
+                {/* ECAD View - only render when all design content is ready */}
+                {activeTab === "ecad" && designReady && (
+                    <div className="absolute inset-0 z-10">
+                        {schematicContent || pcbContent ? (
                             <ecad-viewer
                                 ref={setViewerRef}
                                 style={{ width: '100%', height: '100%' }}
-                                key={`viewer-${projectId}`}
-                            />
+                                key={`viewer-${projectId}-${schematicContent?.length || 0}-${pcbContent?.length || 0}`}
+                            >
+                                {schematicContent && <EcadBlob filename="root.kicad_sch" content={schematicContent} />}
+                                {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
+                                {pcbContent && <EcadBlob filename="board.kicad_pcb" content={pcbContent} />}
+                            </ecad-viewer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                                <p>No design files found.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
-                            <CommentOverlay
-                                comments={overlayComments}
-                                viewerRef={viewerRef}
-                                onPinClick={() => {
-                                    setShowCommentPanel(true);
-                                }}
-                            />
-                        </>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                            <p>No design files found.</p>
-                        </div>
-                    )}
-                </div>
+                {/* Comment Overlay - always rendered but only visible on ecad tab */}
+                {activeTab === "ecad" && schematicContent || pcbContent ? (
+                    <CommentOverlay
+                        comments={overlayComments}
+                        viewerRef={viewerRef}
+                        onPinClick={() => {
+                            setShowCommentPanel(true);
+                        }}
+                    />
+                ) : null}
 
                 {/* 3D View */}
                 {activeTab === "3d" && (
