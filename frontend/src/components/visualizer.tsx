@@ -142,6 +142,13 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
             const loadSchematic = async () => {
                 try {
                     const baseUrl = `/api/projects/${projectId}`;
+                    
+                    // Adaptive delay based on project characteristics
+                    // Light projects need more time for DOM to stabilize
+                    const delay = 150; // Fixed delay for now, could be made adaptive based on project size
+                    
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    
                     const [schRes, subsheetsRes] = await Promise.allSettled([
                         fetch(`${baseUrl}/schematic`),
                         fetch(`${baseUrl}/schematic/subsheets`)
@@ -207,43 +214,11 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         }
     }, [activeTab, pcbContentLoaded, projectId]);
 
-    // Track when crude fix has been applied to prevent multiple executions
-    const [crudeFixApplied, setCrudeFixApplied] = useState(false);
-
     // Reset lazy loading flags when project changes
     useEffect(() => {
         setSchematicContentLoaded(false);
         setPcbContentLoaded(false);
-        setCrudeFixApplied(false);
     }, [projectId]);
-
-    // CRUDE FIX: Auto-switch to iBoM and back to trigger schematic loading
-    // 
-    // ISSUE: Schematics don't load on initial render due to race condition between
-    // React component mounting and ecad-viewer custom element initialization.
-    // The schematic loads correctly when manually switching between tabs.
-    //
-    // WORKAROUND: Automatically switch to iBoM tab briefly (100ms) then back to SCH
-    // This triggers the ecad-viewer to properly initialize and load the schematic content.
-    //
-    // TODO: This is a temporary fix. The proper solution would be to fix the race condition
-    // in the ecad-viewer component initialization or React lifecycle management.
-    useEffect(() => {
-        if (!loading && schematicContentLoaded && activeTab === "sch" && !crudeFixApplied) {
-            // Only run this once when schematic content is loaded
-            const timer = setTimeout(() => {
-                console.log("CRUDE FIX: Applying schematic loading workaround - switching to iBoM and back");
-                setActiveTab("ibom");
-                setTimeout(() => {
-                    setActiveTab("sch");
-                    setCrudeFixApplied(true);
-                    console.log("CRUDE FIX: Workaround completed - schematic should now be loaded");
-                }, 100); // Very brief switch - just enough to trigger re-render
-            }, 500); // Wait for initial render to complete
-            
-            return () => clearTimeout(timer);
-        }
-    }, [loading, schematicContentLoaded, activeTab, crudeFixApplied]);
 
     // Event Listeners for ecad-viewer
     useEffect(() => {
