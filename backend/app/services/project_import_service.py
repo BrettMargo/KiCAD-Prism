@@ -39,6 +39,16 @@ class AnalysisResult:
 jobs: Dict[str, dict] = {}
 
 
+def has_ssh_key() -> bool:
+    """Check if a default SSH key exists."""
+    ssh_dir = Path.home() / ".ssh"
+    key_types = ["id_ed25519", "id_rsa"]
+    for kt in key_types:
+        if (ssh_dir / kt).exists():
+            return True
+    return False
+
+
 class CloneProgress(RemoteProgress):
     """Git progress callback for clone operations."""
     
@@ -129,6 +139,10 @@ def analyze_repository(repo_url: str) -> AnalysisResult:
     Analyze a repository to determine import type and discover projects.
     Performs a shallow clone to a temporary directory.
     """
+    # Error out if HTTPS is used while SSH key is present
+    if repo_url.startswith("https://") and has_ssh_key() and not os.environ.get('GITHUB_TOKEN'):
+        raise ValueError("HTTPS URL provided. Please use the SSH URL (git@github.com:...) when an SSH key is configured.")
+
     repo_name = repo_url.rstrip('/').split('/')[-1].replace('.git', '')
     
     # Create temp directory for analysis
@@ -189,6 +203,14 @@ def _run_analyze_job(job_id: str, repo_url: str):
         # We can reuse the logic from analyze_repository but we need to capture progress
         # Since analyze_repository does a clone, we should ideally use that with progress
         # For now, let's just wrap the synchronous call but ideally we'd refactor to share the clone logic
+        
+        # Error out if HTTPS is used while SSH key is present
+        if repo_url.startswith("https://") and has_ssh_key() and not os.environ.get('GITHUB_TOKEN'):
+            error_msg = "HTTPS URL provided. Please use the SSH URL (git@github.com:...) for private repositories when an SSH key is configured."
+            job['logs'].append(f"Error: {error_msg}")
+            job['status'] = 'failed'
+            job['error'] = error_msg
+            return
         
         repo_name = repo_url.rstrip('/').split('/')[-1].replace('.git', '')
         temp_dir = tempfile.mkdtemp(prefix="kicad_analyze_")
@@ -277,18 +299,26 @@ def _run_import_job(job_id: str, repo_url: str, import_type: str,
     """
     job = jobs[job_id]
     
-    # Extract repo name
-    repo_name = repo_url.rstrip('/').split('/')[-1].replace('.git', '')
-    
-    # Determine target directory based on type
-    if import_type == "type1":
-        base_path = Path(project_service.PROJECTS_ROOT) / "type1"
-    else:
-        base_path = Path(project_service.PROJECTS_ROOT) / "type2"
-    
-    target_path = base_path / repo_name
-    
     try:
+        # Error out if HTTPS is used while SSH key is present
+        if repo_url.startswith("https://") and has_ssh_key() and not os.environ.get('GITHUB_TOKEN'):
+            error_msg = "HTTPS URL provided. Please use the SSH URL (git@github.com:...) for private repositories when an SSH key is configured."
+            job['logs'].append(f"Error: {error_msg}")
+            job['status'] = 'failed'
+            job['error'] = error_msg
+            return
+
+        # Extract repo name
+        repo_name = repo_url.rstrip('/').split('/')[-1].replace('.git', '')
+        
+        # Determine target directory based on type
+        if import_type == "type1":
+            base_path = Path(project_service.PROJECTS_ROOT) / "type1"
+        else:
+            base_path = Path(project_service.PROJECTS_ROOT) / "type2"
+        
+        target_path = base_path / repo_name
+        
         # Check if already exists
         if target_path.exists():
             # Check if this is a "stranded" repo (directory exists but no registry entries)
