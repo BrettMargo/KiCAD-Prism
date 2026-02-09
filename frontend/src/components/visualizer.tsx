@@ -47,7 +47,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         schematicViewerRef.current = node;
         setSchematicViewerElement(node);
     }, []);
-    
+
     const setPcbViewerRef = useCallback((node: HTMLElement | null) => {
         pcbViewerRef.current = node;
         setPcbViewerElement(node);
@@ -142,13 +142,13 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
             const loadSchematic = async () => {
                 try {
                     const baseUrl = `/api/projects/${projectId}`;
-                    
+
                     // Adaptive delay based on project characteristics
                     // Light projects need more time for DOM to stabilize
                     const delay = 150; // Fixed delay for now, could be made adaptive based on project size
-                    
+
                     await new Promise(resolve => setTimeout(resolve, delay));
-                    
+
                     const [schRes, subsheetsRes] = await Promise.allSettled([
                         fetch(`${baseUrl}/schematic`),
                         fetch(`${baseUrl}/schematic/subsheets`)
@@ -224,7 +224,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     useEffect(() => {
         const schematicViewer = schematicViewerElement;
         const pcbViewer = pcbViewerElement;
-        
+
         if (!schematicViewer && !pcbViewer) return;
 
         const handleCommentClick = (e: CustomEvent) => {
@@ -256,7 +256,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
             schematicViewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
             schematicViewer.addEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
         }
-        
+
         if (pcbViewer) {
             pcbViewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
             pcbViewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
@@ -285,7 +285,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         // Apply to both viewers
         const schViewer = schematicViewerRef.current as any;
         const pcbViewer = pcbViewerRef.current as any;
-        
+
         [schViewer, pcbViewer].forEach(viewer => {
             if (viewer) {
                 if (viewer.setCommentMode) {

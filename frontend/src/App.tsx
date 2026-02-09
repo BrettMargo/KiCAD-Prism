@@ -6,6 +6,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { Button } from '@/components/ui/button';
 import { Workspace } from './components/workspace';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
+import { Toaster } from 'sonner';
 
 
 
@@ -104,6 +105,7 @@ function App() {
     // User is authenticated or auth is disabled - show app
     return (
         <BrowserRouter>
+            <Toaster richColors position="top-right" />
             <Routes>
                 <Route path="/" element={
                     <div className="min-h-screen bg-background text-foreground">

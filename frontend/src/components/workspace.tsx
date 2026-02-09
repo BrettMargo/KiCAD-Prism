@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Project, Monorepo, MonorepoStructure } from "@/types/project";
 import { ProjectCard } from "./project-card";
@@ -10,6 +10,29 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { ImportDialog } from "./import-dialog";
 import { cn } from "@/lib/utils";
+import Fuse from "fuse.js";
+import { toast } from "sonner";
+
+// Highlight matched text in search results
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const index = lowerText.indexOf(lowerQuery);
+
+  if (index === -1) return text;
+
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">
+        {text.slice(index, index + query.length)}
+      </mark>
+      {text.slice(index + query.length)}
+    </>
+  );
+}
 
 interface FolderCardProps {
   folder: { name: string; path: string; item_count: number };
@@ -43,7 +66,7 @@ interface MonorepoProjectCardProps {
 
 function MonorepoProjectCard({ project, repoName, onClick }: MonorepoProjectCardProps) {
   const displayName = project.display_name || project.name;
-  
+
   return (
     <div
       className="group relative bg-card border rounded-xl overflow-hidden cursor-pointer hover:border-primary/50 hover:shadow-sm transition-all"
@@ -95,6 +118,9 @@ export function Workspace() {
   const [monorepoStructure, setMonorepoStructure] = useState<MonorepoStructure | null>(null);
   const [breadcrumb, setBreadcrumb] = useState<{ repoName?: string; path?: string }>({});
 
+  // Monorepo structure cache to avoid refetching visited folders
+  const [structureCache, setStructureCache] = useState<Map<string, MonorepoStructure>>(new Map());
+
   // Import Dialog State
   const [isImportOpen, setIsImportOpen] = useState(false);
 
@@ -137,7 +163,22 @@ export function Workspace() {
     fetchData();
   }, []);
 
-  // Global search effect
+  // Fuse.js instance for fuzzy search
+  const fuse = useMemo(() => {
+    return new Fuse(projects, {
+      keys: [
+        { name: "name", weight: 2 },
+        { name: "display_name", weight: 2 },
+        { name: "description", weight: 1 },
+        { name: "parent_repo", weight: 0.5 }
+      ],
+      threshold: 0.4, // Lower = stricter matching
+      includeScore: true,
+      ignoreLocation: true,
+    });
+  }, [projects]);
+
+  // Global fuzzy search effect
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -145,40 +186,56 @@ export function Workspace() {
       return;
     }
 
-    const timeoutId = setTimeout(async () => {
+    const timeoutId = setTimeout(() => {
       setIsSearching(true);
       try {
-        const res = await fetch(`/api/projects/search?q=${encodeURIComponent(searchQuery)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setSearchResults(data.results);
-        }
+        // Use Fuse.js for client-side fuzzy search
+        const results = fuse.search(searchQuery);
+        // Map to include the matched items with score
+        const mappedResults = results.map(result => ({
+          ...result.item,
+          _score: result.score,
+          thumbnail_url: `/api/projects/${result.item.id}/thumbnail`
+        }));
+        setSearchResults(mappedResults);
       } catch (e) {
         console.error("Search error:", e);
       } finally {
         setIsSearching(false);
       }
-    }, 300);
+    }, 150); // Faster since it's client-side
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  }, [searchQuery, fuse]);
 
-  // Load monorepo structure when navigating
+  // Load monorepo structure when navigating (with caching)
   useEffect(() => {
     if (selectedMonorepo) {
       const subpath = selectedMonorepoPath || "";
+      const cacheKey = `${selectedMonorepo}:${subpath}`;
+
+      // Check cache first
+      if (structureCache.has(cacheKey)) {
+        setMonorepoStructure(structureCache.get(cacheKey)!);
+        setBreadcrumb({ repoName: selectedMonorepo, path: subpath });
+        return;
+      }
+
+      // Fetch and cache
       fetch(`/api/projects/monorepos/${selectedMonorepo}/structure?subpath=${encodeURIComponent(subpath)}`)
         .then((res) => res.json())
         .then((data) => {
           setMonorepoStructure(data);
           setBreadcrumb({ repoName: selectedMonorepo, path: subpath });
+          // Add to cache
+          setStructureCache(prev => new Map(prev).set(cacheKey, data));
         })
         .catch(console.error);
     } else {
       setMonorepoStructure(null);
       setBreadcrumb({});
     }
-  }, [selectedMonorepo, selectedMonorepoPath]);
+  }, [selectedMonorepo, selectedMonorepoPath, structureCache]);
 
   const handleSelectProject = (project: Project) => {
     setSelectedProjectId(project.id);
@@ -248,14 +305,21 @@ export function Workspace() {
       if (res.ok) {
         // Remove from recent projects if present
         setRecentProjectIds((prev) => prev.filter((id) => id !== projectToDelete.id));
+        // Clear structure cache in case it contained this project
+        setStructureCache(new Map());
+        // Show success toast
+        toast.success(`Deleted "${getDisplayName(projectToDelete)}" successfully`);
         // Refresh the project list
         fetchData();
       } else {
-        alert('Failed to delete project');
+        // Parse and show actual error from backend
+        const errorData = await res.json().catch(() => ({}));
+        const errorMessage = errorData.detail || errorData.message || 'Unknown error occurred';
+        toast.error(`Failed to delete project: ${errorMessage}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Delete error:', e);
-      alert('Failed to delete project');
+      toast.error(`Failed to delete project: ${e.message || 'Network error'}`);
     } finally {
       setIsDeleting(false);
       setProjectToDelete(null);
@@ -391,13 +455,13 @@ export function Workspace() {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6">
-      <ImportDialog
-        open={isImportOpen}
-        onOpenChange={setIsImportOpen}
-        onImportComplete={fetchData}
-      />
+          <ImportDialog
+            open={isImportOpen}
+            onOpenChange={setIsImportOpen}
+            onImportComplete={fetchData}
+          />
 
-      {loading ? (
+          {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <Skeleton key={i} className="h-[280px] rounded-xl" />
@@ -445,11 +509,11 @@ export function Workspace() {
                         />
                       </div>
                       <div className="p-3">
-                        <h3 className="font-medium text-sm truncate">{getDisplayName(project)}</h3>
+                        <h3 className="font-medium text-sm truncate">{highlightMatch(getDisplayName(project), searchQuery)}</h3>
                         {project.parent_repo && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{project.parent_repo}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{highlightMatch(project.parent_repo, searchQuery)}</p>
                         )}
-                        <p className="text-xs text-muted-foreground">{project.description}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2">{highlightMatch(project.description || '', searchQuery)}</p>
                       </div>
                     </div>
                   ))}
