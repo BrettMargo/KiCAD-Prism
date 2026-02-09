@@ -17,6 +17,11 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
     const navigate = useNavigate();
 
     const thumbnailUrl = project.thumbnail_url ? project.thumbnail_url : null;
+    
+    // Helper function to get display name
+    const getDisplayName = (project: Project) => {
+        return project.display_name || project.name;
+    };
 
     const handleClick = () => {
         if (onClick) {
@@ -35,13 +40,13 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
                 <div className="flex items-center gap-3 p-3">
                     <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
                         {thumbnailUrl ? (
-                            <img src={thumbnailUrl} alt={project.name} className="w-full h-full object-cover" />
+                            <img src={thumbnailUrl} alt={getDisplayName(project)} className="w-full h-full object-cover" />
                         ) : (
                             <Box className="h-6 w-6 opacity-20" />
                         )}
                     </div>
                     <div className="min-w-0">
-                        <h3 className="font-medium text-sm truncate">{project.name}</h3>
+                        <h3 className="font-medium text-sm truncate">{getDisplayName(project)}</h3>
                         <p className="text-xs text-muted-foreground">{project.last_modified}</p>
                     </div>
                 </div>
@@ -58,7 +63,7 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
                 {thumbnailUrl ? (
                     <img
                         src={thumbnailUrl}
-                        alt={project.name}
+                        alt={getDisplayName(project)}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                 ) : (
@@ -88,7 +93,7 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
 
             <CardContent className="p-4">
                 <h3 className="font-semibold text-lg tracking-tight mb-1 group-hover:text-primary transition-colors truncate">
-                    {project.name}
+                    {getDisplayName(project)}
                 </h3>
                 <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
                     {project.description || "No description available."}

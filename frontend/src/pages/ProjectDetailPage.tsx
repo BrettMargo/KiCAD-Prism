@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 interface Project {
     id: string;
     name: string;
+    display_name?: string;
     description: string;
     path: string;
     last_modified: string;
@@ -44,6 +45,11 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
     const [visualizerLoaded, setVisualizerLoaded] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [pathConfigOpen, setPathConfigOpen] = useState(false);
+
+    // Helper function to get display name
+    const getDisplayName = (project: Project) => {
+        return project.display_name || project.name;
+    };
 
     useEffect(() => {
         if (activeSection === 'visualizers') {
@@ -91,10 +97,20 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
     useEffect(() => {
         const fetchProject = async () => {
             try {
-                const response = await fetch(`/api/projects/${projectId}`);
-                if (!response.ok) throw new Error("Failed to fetch project");
-                const data = await response.json();
-                setProject(data);
+                const [projectResponse, nameResponse] = await Promise.all([
+                    fetch(`/api/projects/${projectId}`),
+                    fetch(`/api/projects/${projectId}/name`)
+                ]);
+                
+                if (!projectResponse.ok) throw new Error("Failed to fetch project");
+                const projectData = await projectResponse.json();
+                
+                if (nameResponse.ok) {
+                    const nameData = await nameResponse.json();
+                    projectData.display_name = nameData.display_name;
+                }
+                
+                setProject(projectData);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -210,8 +226,8 @@ export function ProjectDetailPage({ user }: { user: User | null }) {
                     Back
                 </Button>
                 <div className="flex-1">
-                    <h1 className="text-xl font-bold truncate max-w-[200px] md:max-w-none">{project.name}</h1>
-                    <p className="text-sm text-muted-foreground hidden md:block">{project.description}</p>
+                    <h1 className="text-xl font-bold truncate max-w-[200px] md:max-w-none">{project ? getDisplayName(project) : ''}</h1>
+                    <p className="text-sm text-muted-foreground hidden md:block">{project?.description}</p>
                 </div>
 
                 {/* Sync Button */}

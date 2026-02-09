@@ -36,12 +36,14 @@ function FolderCard({ folder, onDoubleClick }: FolderCardProps) {
 }
 
 interface MonorepoProjectCardProps {
-  project: { id: string; name: string; relative_path: string; has_thumbnail: boolean; last_modified: string };
+  project: { id: string; name: string; display_name?: string; relative_path: string; has_thumbnail: boolean; last_modified: string };
   repoName: string;
   onClick: () => void;
 }
 
 function MonorepoProjectCard({ project, repoName, onClick }: MonorepoProjectCardProps) {
+  const displayName = project.display_name || project.name;
+  
   return (
     <div
       className="group relative bg-card border rounded-xl overflow-hidden cursor-pointer hover:border-primary/50 hover:shadow-sm transition-all"
@@ -51,19 +53,19 @@ function MonorepoProjectCard({ project, repoName, onClick }: MonorepoProjectCard
         {project.has_thumbnail ? (
           <img
             src={`/api/projects/${project.id}/thumbnail`}
-            alt={project.name}
+            alt={displayName}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
             <span className="text-4xl font-bold text-muted-foreground/30">
-              {project.name.charAt(0).toUpperCase()}
+              {displayName.charAt(0).toUpperCase()}
             </span>
           </div>
         )}
       </div>
       <div className="p-3">
-        <h3 className="font-medium text-sm truncate">{project.name}</h3>
+        <h3 className="font-medium text-sm truncate">{displayName}</h3>
         <p className="text-xs text-muted-foreground mt-0.5">{repoName}</p>
         <p className="text-xs text-muted-foreground">Modified: {project.last_modified}</p>
       </div>
@@ -80,6 +82,11 @@ export function Workspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Helper function to get display name
+  const getDisplayName = (project: Project) => {
+    return project.display_name || project.name;
+  };
 
   // Navigation state
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
@@ -275,8 +282,9 @@ export function Workspace() {
   // Filter projects based on search (for standalone projects view only)
   const filteredProjects = projects.filter((project) => {
     const query = searchQuery.toLowerCase();
+    const displayName = getDisplayName(project);
     return (
-      project.name.toLowerCase().includes(query) ||
+      displayName.toLowerCase().includes(query) ||
       project.description.toLowerCase().includes(query)
     );
   });
@@ -429,7 +437,7 @@ export function Workspace() {
                       <div className="aspect-[4/3] bg-muted relative overflow-hidden">
                         <img
                           src={project.thumbnail_url}
-                          alt={project.name}
+                          alt={getDisplayName(project)}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none';
@@ -437,7 +445,7 @@ export function Workspace() {
                         />
                       </div>
                       <div className="p-3">
-                        <h3 className="font-medium text-sm truncate">{project.name}</h3>
+                        <h3 className="font-medium text-sm truncate">{getDisplayName(project)}</h3>
                         {project.parent_repo && (
                           <p className="text-xs text-muted-foreground mt-0.5">{project.parent_repo}</p>
                         )}
@@ -546,7 +554,7 @@ export function Workspace() {
           <DialogHeader>
             <DialogTitle>Delete Project</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete <strong>{projectToDelete?.name}</strong>?
+              Are you sure you want to delete <strong>{projectToDelete ? getDisplayName(projectToDelete) : ''}</strong>?
               This action cannot be undone. The project files will be permanently removed.
             </DialogDescription>
           </DialogHeader>

@@ -122,9 +122,14 @@ async def get_monorepo_structure(repo_name: str, subpath: str = ""):
                 # This is a KiCAD project
                 project = repo_projects.get(relative_path)
                 if project:
+                    # Get custom display name for this project
+                    full_project_path = os.path.join(current_path, item)
+                    custom_display_name = path_config_service.get_project_display_name(full_project_path)
+                    
                     projects.append({
                         "id": project.id,
                         "name": project.name,
+                        "display_name": custom_display_name,
                         "relative_path": relative_path,
                         "has_thumbnail": project_service.get_project_thumbnail_path(project.id) is not None,
                         "last_modified": project.last_modified
@@ -682,4 +687,50 @@ async def update_project_config(project_id: str, config: PathConfig):
         "config": config.dict(),
         "resolved": resolved.dict(),
         "validation": validation
+    }
+
+
+class ProjectNameRequest(BaseModel):
+    display_name: str
+
+
+@router.get("/{project_id}/name")
+async def get_project_name(project_id: str):
+    """
+    Get the display name for a project.
+    Returns custom name from .prism.json or fallback name.
+    """
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    return {
+        "display_name": project.display_name,
+        "fallback_name": project.name
+    }
+
+
+@router.put("/{project_id}/name")
+async def update_project_name(project_id: str, request: ProjectNameRequest):
+    """
+    Update the display name for a project in .prism.json.
+    """
+    projects = project_service.get_registered_projects()
+    project = next((p for p in projects if p.id == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get current config
+    config = path_config_service.get_path_config(project.path)
+    
+    # Update project name
+    config.project_name = request.display_name.strip()
+    
+    # Save to .prism.json
+    path_config_service.save_path_config(project.path, config)
+    
+    return {
+        "display_name": request.display_name,
+        "message": "Project name updated successfully"
     }

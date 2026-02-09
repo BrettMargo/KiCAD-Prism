@@ -10,6 +10,7 @@ from app.services import path_config_service
 class Project(BaseModel):
     id: str
     name: str
+    display_name: Optional[str] = None  # Custom name from .prism.json
     description: str
     path: str
     last_modified: str
@@ -127,9 +128,13 @@ def get_registered_projects() -> List[Project]:
         except:
             last_modified = data.get("last_modified", "Unknown")
         
+        # Get custom display name from .prism.json
+        custom_display_name = path_config_service.get_project_display_name(normalized_path)
+        
         projects.append(Project(
             id=project_id,
             name=data["name"],
+            display_name=custom_display_name,
             description=data.get("description", f"Project {data['name']}"),
             path=normalized_path,
             last_modified=last_modified,

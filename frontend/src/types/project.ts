@@ -1,6 +1,7 @@
 export interface Project {
     id: string;
     name: string;
+    display_name?: string;
     description: string;
     path: string;
     last_modified: string;
@@ -27,6 +28,7 @@ export interface MonorepoFolder {
 export interface MonorepoProject {
     id: string;
     name: string;
+    display_name?: string;
     relative_path: string;
     has_thumbnail: boolean;
     last_modified: string;

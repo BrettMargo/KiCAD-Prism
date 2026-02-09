@@ -31,6 +31,7 @@ interface PathConfig {
     thumbnail?: string;
     readme?: string;
     jobset?: string;
+    projectName?: string;
 }
 
 interface PathConfigDialogProps {
@@ -88,13 +89,24 @@ export function PathConfigDialog({ projectId, open, onOpenChange }: PathConfigDi
 
     const fetchConfig = async () => {
         try {
-            const response = await fetch(`/api/projects/${projectId}/config`);
-            if (response.ok) {
-                const data = await response.json();
+            // Fetch both path config and project name
+            const [configResponse, nameResponse] = await Promise.all([
+                fetch(`/api/projects/${projectId}/config`),
+                fetch(`/api/projects/${projectId}/name`)
+            ]);
+            
+            if (configResponse.ok) {
+                const data = await configResponse.json();
                 setConfig(data.config || {});
                 setOriginalConfig(data.config || {});
                 setResolvedPaths(data.resolved || {});
                 setSource(data.source || "auto-detected");
+            }
+            
+            if (nameResponse.ok) {
+                const nameData = await nameResponse.json();
+                setConfig(prev => ({ ...prev, projectName: nameData.display_name }));
+                setOriginalConfig(prev => ({ ...prev, projectName: nameData.display_name }));
             }
         } catch (err) {
             console.error("Failed to fetch config:", err);
@@ -122,16 +134,33 @@ export function PathConfigDialog({ projectId, open, onOpenChange }: PathConfigDi
     const saveConfig = async () => {
         setSaving(true);
         try {
-            const response = await fetch(`/api/projects/${projectId}/config`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(config),
-            });
-            if (response.ok) {
-                const data = await response.json();
+            // Save both path config and project name
+            const [configResponse, nameResponse] = await Promise.all([
+                fetch(`/api/projects/${projectId}/config`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(config),
+                }),
+                // Only save project name if it has changed
+                config.projectName !== originalConfig.projectName && config.projectName
+                    ? fetch(`/api/projects/${projectId}/name`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ display_name: config.projectName }),
+                    })
+                    : Promise.resolve({ ok: true })
+            ]);
+            
+            if (configResponse.ok) {
+                const data = await configResponse.json();
                 setOriginalConfig(config);
                 setResolvedPaths(data.resolved || {});
                 setSource("explicit");
+            }
+            
+            if (nameResponse.ok && config.projectName !== originalConfig.projectName) {
+                // Project name saved successfully
+                console.log("Project name updated");
             }
         } catch (err) {
             console.error("Failed to save config:", err);
@@ -178,10 +207,10 @@ export function PathConfigDialog({ projectId, open, onOpenChange }: PathConfigDi
                 <DialogHeader className="p-6 pb-2">
                     <DialogTitle className="flex items-center gap-2">
                         <Settings className="h-5 w-5" />
-                        Path Configuration
+                        Project Settings
                     </DialogTitle>
                     <DialogDescription>
-                        Configure folder and file paths for this project.
+                        Configure project name and folder/file paths for this project.
                         <div className="flex items-center gap-2 mt-2">
                             <Badge variant={source === "explicit" ? "default" : "secondary"}>
                                 {source}
@@ -197,6 +226,40 @@ export function PathConfigDialog({ projectId, open, onOpenChange }: PathConfigDi
 
                 <ScrollArea className="px-6 py-2 max-h-[50vh]">
                     <div className="space-y-4">
+                        {/* Project Name Field */}
+                        <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <Label htmlFor="projectName" className="text-sm font-medium">
+                                    Project Name
+                                </Label>
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <span className="cursor-help">
+                                                <Settings className="h-4 w-4 text-muted-foreground" />
+                                            </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right">
+                                            <p className="max-w-sm">Custom display name for this project. If not set, folder name will be used.</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </div>
+                            <Input
+                                id="projectName"
+                                value={config.projectName || ""}
+                                onChange={(e) => handleChange("projectName", e.target.value)}
+                                placeholder="Enter custom project name"
+                                className="h-8"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                This name will be displayed instead of the folder name throughout the interface.
+                            </p>
+                        </div>
+
+                        <Separator />
+
+                        {/* Path Configuration Fields */}
                         {Object.entries(PATH_LABELS).map(([key, { label, description }]) => (
                             <div key={key} className="space-y-1.5">
                                 <div className="flex items-center gap-2">

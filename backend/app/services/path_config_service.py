@@ -96,6 +96,7 @@ class PathConfig(BaseModel):
     thumbnail: Optional[str] = None
     readme: Optional[str] = None
     jobset: Optional[str] = None
+    project_name: Optional[str] = None
     
     class Config:
         extra = "allow"  # Allow additional custom paths
@@ -126,8 +127,15 @@ def _load_prism_config(project_path: str) -> Optional[Dict[str, Any]]:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+                result = {}
+                # Handle legacy format with paths nested
                 if "paths" in config:
-                    return config["paths"]
+                    result.update(config["paths"])
+                # Add top-level fields like project_name
+                for key, value in config.items():
+                    if key != "paths":
+                        result[key] = value
+                return result
         except (json.JSONDecodeError, IOError) as e:
             print(f"Warning: Failed to parse .prism.json: {e}")
     return None
@@ -410,6 +418,20 @@ def resolve_paths(project_path: str, config: Optional[PathConfig] = None) -> Res
     )
 
 
+def get_project_display_name(project_path: str) -> Optional[str]:
+    """
+    Get the display name for a project from .prism.json.
+    
+    Args:
+        project_path: Absolute path to project root
+        
+    Returns:
+        Custom project name from .prism.json or None if not set
+    """
+    config = get_path_config(project_path, use_cache=False)  # Don't use cache to get fresh data
+    return config.project_name if config.project_name else None
+
+
 def save_path_config(project_path: str, config: PathConfig) -> None:
     """
     Save path configuration to .prism.json.
@@ -429,8 +451,25 @@ def save_path_config(project_path: str, config: PathConfig) -> None:
         except (json.JSONDecodeError, IOError):
             pass
     
-    # Update paths
-    existing["paths"] = config.dict(exclude_none=True)
+    # Update paths and other fields
+    config_dict = config.dict(exclude_none=True)
+    
+    # Separate paths and other fields
+    if "paths" not in existing:
+        existing["paths"] = {}
+    
+    # Path fields go under paths key
+    path_fields = ["schematic", "pcb", "subsheets", "designOutputs", "manufacturingOutputs", 
+                  "documentation", "thumbnail", "readme", "jobset"]
+    for field in path_fields:
+        if field in config_dict:
+            existing["paths"][field] = config_dict[field]
+    
+    # Non-path fields go at top level
+    non_path_fields = ["project_name"]
+    for field in non_path_fields:
+        if field in config_dict:
+            existing[field] = config_dict[field]
     
     # Save
     with open(config_path, 'w', encoding='utf-8') as f:
@@ -438,7 +477,7 @@ def save_path_config(project_path: str, config: PathConfig) -> None:
     
     # Update cache
     cache_key = str(Path(project_path).resolve())
-    _config_cache[cache_key] = config.dict()
+    _config_cache[cache_key] = config_dict
 
 
 def clear_config_cache(project_path: Optional[str] = None) -> None:
