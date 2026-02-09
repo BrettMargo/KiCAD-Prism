@@ -81,7 +81,7 @@ This feature allows users to set custom display names for their KiCAD projects t
 
 ## Features
 
-### ✅ Implemented Features
+### Implemented Features
 
 - **Custom Project Names**: Set display names via `.prism.json`
 - **UI Integration**: Edit names through Path Config Dialog
@@ -91,7 +91,7 @@ This feature allows users to set custom display names for their KiCAD projects t
 - **Fallback System**: Graceful degradation to folder names
 - **Real-time Updates**: Changes reflect immediately
 
-### 🔄 API Endpoints
+### API Endpoints
 
 #### Get Project Name
 ```http
@@ -124,56 +124,6 @@ Response:
 }
 ```
 
-## File Structure
-
-```
-KiCAD-Prism/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── projects.py          # Added name endpoints
-│   │   └── services/
-│   │       ├── path_config_service.py  # Extended for project names
-│   │       └── project_service.py     # Updated for display names
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── path-config-dialog.tsx    # Added name field
-│   │   ├── project-card.tsx           # Updated for display names
-│   │   ├── project-name-editor.tsx      # Standalone editor
-│   │   └── workspace.tsx              # Updated for display names
-│   │   ├── pages/
-│   │   │   └── ProjectDetailPage.tsx   # Updated title display
-│   │   ├── services/
-│   │   │   └── project-name-api.ts       # API service
-│   │   └── types/
-│   │       └── project.ts               # Updated interfaces
-└── docs/
-    └── CUSTOM_PROJECT_NAMES.md           # This documentation
-```
-
-## Testing
-
-### Manual Testing Steps
-
-1. **Workspace Display**
-   - [ ] Verify custom names appear in project cards
-   - [ ] Test search with custom names
-   - [ ] Check fallback for projects without custom names
-
-2. **Project Detail Page**
-   - [ ] Verify title shows custom name
-   - [ ] Test Path Config Dialog integration
-   - [ ] Confirm name persistence after save
-
-3. **API Testing**
-   - [ ] Test GET project name endpoint
-   - [ ] Test PUT project name endpoint
-   - [ ] Verify error handling
-
-4. **Monorepo Support**
-   - [ ] Test custom names in subprojects
-   - [ ] Verify monorepo structure API
 
 ## Migration Notes
 
