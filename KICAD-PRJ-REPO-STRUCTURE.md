@@ -1,6 +1,6 @@
 # KiCAD Project Repository Structure
 
-To ensure full compatibility with the KiCAD Prism platform (including visualizers and automated workflows), board project repositories should follow this standardized folder layout.
+To ensure full compatibility with the KiCAD-Prism platform (including visualizers and automated workflows), board project repositories should follow this standardized folder layout.
 
 ## Root Directory
 
@@ -17,6 +17,7 @@ To ensure full compatibility with the KiCAD Prism platform (including visualizer
 | `simulation/` | Simulation files and results |
 
 ---
+
 ## Repository Structure Visualization
 
 ```text
@@ -52,20 +53,25 @@ Board-Project-Repo/
 ## Sub-Directories
 
 ### `Subsheets/`
+
 Contains all hierarchical schematic pages (`.kicad_sch`) except for the root schematic. This keeps the root directory clean and allows KiCAD Prism to find subsheets automatically.
 
 ### `Design-Outputs/`
+
 This folder is automatically managed by the **Workflows** feature in KiCAD Prism. It typically contains:
+
 - `BoardName.pdf`: Full schematic PDF.
 - `BoardName_iBoM.html`: Interactive BOM.
 - `3DModel/BoardName.step`: PCB 3D model.
 
 ### `Manufacturing-Outputs/`
+
 This folder is also managed by the **Workflows** feature and contains fabrication-ready files:
+
 - `Gerbers/`: Gerber and drill files.
 - `BOM/`: Precise manufacturing BOMs.
 - `XY-Data/`: Pick-and-place files.
 
 ### `docs/`
-This folder is managed by the **Documentation** feature in KiCAD Prism. Typically contains markdown files detailing various aspects of the board.
 
+This folder is managed by the **Documentation** feature in KiCAD Prism. Typically contains markdown files detailing various aspects of the board.

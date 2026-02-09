@@ -10,7 +10,7 @@ KiCAD Prism is a modern, high-performance web-based platform designed for visual
 
 ### Modern Workspace Management
 
-Manage all your KiCAD repositories in a unified dashboard. Import projects directly from GitHub via async jobs with real-time status tracking.
+Manage all your KiCAD repositories in a unified dashboard. Import projects directly from GitHub or GitLab via async jobs with real-time status tracking and detailed logs. Analysis is optimized using blobless, no-checkout clones for near-instant repository scanning. Supports both GitHub Tokens and SSH keys for private repository access.
 
 <p align="center">
   <img src="assets/KiCAD-Prism-Workspace.png" width="49%" alt="Workspace Overview">
@@ -57,6 +57,9 @@ In the Comments Panel, the user can view all the comments and replies in a threa
 </p>
 
 Pressing the Push Comments button will push the latest files in the backend to the remote repository with a commit message.
+
+> Native parsing of comments.json and display of comments in KiCAD is currently NOT available
+Please upvote [this](https://gitlab.com/kicad/code/kicad/-/issues/22918) feature request on Gitlab for a comments panel in KiCAD!
 
 *Threaded design reviews with spatial context.*
 
@@ -221,8 +224,10 @@ KiCAD-Prism/
 - [x] Collaborative Threaded Design Review
 - [x] Automated Workflow Generation
 - [x] Visual Git Diff (Native kicad-cli integration)
-- [ ] Fix page transition logic completely
-- [ ] KiCAD Plugin to overlay comments on the schematic and PCB editors
+- [x] Fix page transition logic completely
+- [x] Refine Workspace UI and handle non-GitHub Imports better
+- [ ] Fix ecad-viewer bugs for small projects
+- [ ] KiCAD Plugin/source code edits to overlay comments on the schematic and PCB editors
 - [ ] User Permissions & Role-Based Access
 - [ ] Real-time Collaboration (WebSockets)
 
@@ -230,7 +235,7 @@ KiCAD-Prism/
 
 ## Acknowledgements
 
-Built with ❤️ for the open-source hardware community. Special thanks to the teams behind:
+Built with care for the open-source hardware community. Special thanks to the teams behind:
 
 - [ecad-viewer](https://github.com/Huaqiu-Electronics/ecad-viewer) for the core visualization engine.
 - [KiCanvas](https://kicanvas.org) for native schematic rendering.

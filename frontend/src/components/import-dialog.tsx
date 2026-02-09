@@ -46,7 +46,8 @@ interface ImportDialogProps {
 
 type ImportState =
   | { step: "input" }
-  | { step: "analyzing"; url: string }
+  | { step: "input" }
+  | { step: "analyzing"; url: string; jobId?: string; status?: JobStatus }
   | { step: "review"; url: string; analysis: AnalysisResult }
   | { step: "importing"; url: string; jobId: string; status: JobStatus }
   | { step: "complete"; success: boolean; message: string };
@@ -88,21 +89,68 @@ export function ImportDialog({
         throw new Error(error.detail || "Analysis failed");
       }
 
-      const analysis: AnalysisResult = await res.json();
+      const { job_id } = await res.json();
 
-      // For Type-1, auto-select the single project
-      if (analysis.import_type === "type1" && analysis.projects.length === 1) {
-        setSelectedPaths(new Set([analysis.projects[0].relative_path]));
-      }
+      // Start polling analysis job
+      pollAnalysisJob(job_id, url);
 
-      setState({ step: "review", url, analysis });
     } catch (error: any) {
       setState({
         step: "complete",
         success: false,
-        message: error.message || "Failed to analyze repository",
+        message: error.message || "Failed to start analysis",
       });
     }
+  };
+
+  const pollAnalysisJob = async (jobId: string, repoUrl: string) => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/projects/jobs/${jobId}`);
+        if (!res.ok) throw new Error("Failed to get job status");
+
+        const status: JobStatus = await res.json();
+
+        // Update state with ongoing job status
+        setState({ step: "analyzing", url: repoUrl, jobId, status });
+
+        if (status.status === "completed") {
+          // Job completed, result should be in status (we need to ensure backend sends it)
+          // The backend project_import_service puts 'result' in job dict
+          // We need to extend JobStatus interface or cast it
+          const result = (status as any).result as AnalysisResult;
+
+          if (!result) {
+            throw new Error("Analysis completed but no result returned");
+          }
+
+          // Auto-select type1
+          if (result.import_type === "type1" && result.projects.length === 1) {
+            setSelectedPaths(new Set([result.projects[0].relative_path]));
+          }
+
+          setState({ step: "review", url: repoUrl, analysis: result });
+
+        } else if (status.status === "failed") {
+          setState({
+            step: "complete",
+            success: false,
+            message: status.error || "Analysis failed",
+          });
+        } else {
+          // Continue polling
+          setTimeout(poll, 1000);
+        }
+      } catch (error: any) {
+        setState({
+          step: "complete",
+          success: false,
+          message: error.message || "Failed to check analysis status",
+        });
+      }
+    };
+
+    poll();
   };
 
   const startImport = async () => {
@@ -257,12 +305,36 @@ export function ImportDialog({
             <DialogHeader>
               <DialogTitle>Analyzing Repository</DialogTitle>
               <DialogDescription>
-                Scanning for KiCAD projects...
+                {state.status?.message || "Starting analysis..."}
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+
+            {!state.status ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-4 py-4">
+                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                  {/* Analysis involves cloning which has progress, so we can use state.status.percent if available */}
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${state.status.percent || 0}%` }}
+                  />
+                </div>
+
+                <div className="max-h-32 overflow-y-auto text-sm font-mono bg-muted p-2 rounded">
+                  {state.status.logs?.slice(-5).map((log, i) => (
+                    <div key={i} className="text-muted-foreground">
+                      {log}
+                    </div>
+                  ))}
+                  {(!state.status.logs || state.status.logs.length === 0) && (
+                    <span className="text-muted-foreground italic">Starting analysis...</span>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         )}
 

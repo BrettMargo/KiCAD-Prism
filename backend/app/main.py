@@ -1,12 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.services.git_service import router as git_router
 from app.api.auth import router as auth_router
 from app.api.projects import router as projects_router
 from app.api.comments import router as comments_router
 from app.api.diff import router as diff_router
+from app.api.settings import router as settings_router
+from app.services.git_service import router as git_router
 from app.core.config import settings
 import subprocess
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 def configure_git():
@@ -24,10 +27,25 @@ def configure_git():
         except Exception as e:
             print(f"Failed to configure Git with token: {e}")
 
+def ensure_ssh_dir():
+    """Ensure ~/.ssh exists and has correct permissions."""
+    ssh_dir = Path.home() / ".ssh"
+    try:
+        ssh_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(ssh_dir, 0o700)
+        # Create known_hosts if not exists
+        known_hosts = ssh_dir / "known_hosts"
+        if not known_hosts.exists():
+            known_hosts.touch(mode=0o644)
+        print("SSH directory configured correctly.")
+    except Exception as e:
+        print(f"Failed to configure SSH directory: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     configure_git()
+    ensure_ssh_dir()
     yield
 
 app = FastAPI(title="KiCAD Prism API", lifespan=lifespan)
@@ -47,7 +65,4 @@ app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
 app.include_router(comments_router, prefix="/api/projects", tags=["comments"])
 app.include_router(diff_router, prefix="/api/projects", tags=["diff"])
-
-@app.get("/")
-async def root():
-    return {"message": "KiCAD Prism Backend is Running"}
+app.include_router(settings_router, prefix="/api/settings", tags=["settings"])

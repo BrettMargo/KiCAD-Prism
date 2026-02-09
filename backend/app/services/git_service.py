@@ -311,7 +311,13 @@ def sync_with_remote(repo_path: str) -> Dict[str, Any]:
         
         # Perform git pull
         origin = repo.remotes.origin
-        pull_info = origin.pull()
+        
+        env = os.environ.copy()
+        env['GIT_TERMINAL_PROMPT'] = '0'
+        # Trust On First Use (TOFU) for SSH
+        env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=accept-new'
+        
+        pull_info = origin.pull(env=env)
         
         # Get new HEAD after sync
         current_commit = repo.head.commit.hexsha

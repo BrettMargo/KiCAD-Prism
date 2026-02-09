@@ -188,27 +188,8 @@ async def analyze_repository(request: AnalyzeRequest):
     Returns Type-1 or Type-2 classification and project list.
     """
     try:
-        result = project_import_service.analyze_repository(request.url)
-        
-        response = {
-            "repo_name": result.repo_name,
-            "repo_url": result.repo_url,
-            "import_type": result.import_type,
-            "projects": [
-                {
-                    "name": p.name,
-                    "relative_path": p.relative_path,
-                    "has_schematic": p.has_schematic,
-                    "has_pcb": p.has_pcb
-                }
-                for p in result.projects
-            ]
-        }
-        
-        # Cleanup temp directory after analysis
-        project_import_service.cleanup_analysis_temp(result)
-        
-        return response
+        job_id = project_import_service.start_analyze_job(request.url)
+        return {"job_id": job_id, "status": "started"}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

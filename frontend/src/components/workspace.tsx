@@ -5,10 +5,11 @@ import { ProjectCard } from "./project-card";
 import { SidebarTree } from "./sidebar-tree";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, ChevronRight, Folder, Clock } from "lucide-react";
+import { Plus, Search, ChevronRight, Folder, Clock, Settings } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ImportDialog } from "./import-dialog";
+import { SettingsDialog } from "./settings-dialog";
 import { cn } from "@/lib/utils";
 import Fuse from "fuse.js";
 import { toast } from "sonner";
@@ -123,6 +124,7 @@ export function Workspace() {
 
   // Import Dialog State
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Recent projects (last 3 opened) - stored in localStorage
   const [recentProjectIds, setRecentProjectIds] = useState<string[]>(() => {
@@ -446,6 +448,9 @@ export function Workspace() {
                 className="pl-10"
               />
             </div>
+            <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </Button>
             <Button onClick={() => setIsImportOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Import
@@ -459,6 +464,10 @@ export function Workspace() {
             open={isImportOpen}
             onOpenChange={setIsImportOpen}
             onImportComplete={fetchData}
+          />
+          <SettingsDialog
+            open={isSettingsOpen}
+            onOpenChange={setIsSettingsOpen}
           />
 
           {loading ? (

@@ -8,6 +8,8 @@ services:
     volumes:
       # Mount projects directory for persistence
       - ./data/projects:/app/projects
+      # Mount SSH directory for Git persistence (GitLab/GitHub SSH)
+      - ./data/ssh:/root/.ssh
     environment:
       - PYTHONUNBUFFERED=1
       # Root directory for storing projects

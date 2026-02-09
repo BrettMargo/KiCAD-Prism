@@ -24,7 +24,6 @@ cd KiCAD-Prism
 docker compose up -d --build
 ```
 
-> [!TIP]
 > `docker compose up -d` will automatically build the images the first time. Using the `--build` flag ensures that any local changes to the `Dockerfile` or source code are re-built into the images.
 
 Access the UI at: **`http://localhost`**
@@ -67,7 +66,9 @@ DEV_MODE=false
 
 # [GIT] Private Repository Access (Optional)
 # Enter your GitHub Personal Access Token (classic) to enable 
-# Sync, Push, and Import for private/organizational repos.
+# sync and import for private repositories. Note: This is an 
+# optional override; SSH keys are the recommended way for 
+# private repository access.
 GITHUB_TOKEN=ghp_your_secret_token_here
 ```
 
@@ -84,7 +85,36 @@ The backend will automatically configure Git to use this token for all `https://
 
 ---
 
-## 3. Local Development (Manual Setup)
+## 3. Multi-Provider Git Support (GitLab, Bitbucket, etc.)
+
+KiCAD Prism is provider-agnostic. While it has dedicated support for GitHub Tokens, it also supports **SSH Keys**, which is the recommended way to interact with GitLab, Bitbucket, or self-hosted Git instances.
+
+### Using the SSH Setup Wizard (Recommended)
+
+1. Open the KiCAD Prism UI and go to the **Workspace**.
+2. Click the **Settings (Gear icon)** in the top right.
+3. Under the **Git & SSH** tab, if no key is present, click **Generate New SSH Key**.
+4. Copy the generated **Public Key**.
+5. Add this key to your Git provider (e.g., GitHub Settings -> SSH and GPG keys -> New SSH Key).
+6. You can now import projects using SSH URLs (e.g., `git@github.com:user/repo.git`).
+
+### Manual Docker Configuration for SSH
+
+To ensure your SSH keys persist across container restarts, you must mount a volume for the `.ssh` directory in your `docker-compose.yml`:
+
+```yaml
+services:
+  backend:
+    volumes:
+      - ./data/ssh:/root/.ssh:rw
+```
+
+> [IMPORTANT]
+> The setup wizard requires the volume to be mapped with read-write (`:rw`) permissions so it can generate and store the keys.
+
+---
+
+## 4. Local Development (Manual Setup)
 
 If you want to contribute to the code or run without Docker, follow these steps.
 
@@ -126,7 +156,7 @@ npm run dev
 
 ---
 
-## 4. Authentication Setup (Google OAuth)
+## 5. Authentication Setup (Google OAuth)
 
 KiCAD Prism supports optional Google Sign-in with domain restrictions.
 
@@ -149,10 +179,10 @@ KiCAD Prism supports optional Google Sign-in with domain restrictions.
 
 ---
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 | Issue | Solution |
-|-------|----------|
+| :--- | :--- |
 | **Docker pull fails** | Check your internet connection and ensure you are using the correct image tag (e.g., `kicad/kicad:9.0.0-arm64` for Mac M1/M2). |
 | **Visual Diff Empty** | Check `docker logs kicad-prism-backend` to ensure `kicad-cli` is running correctly. |
 | **Persistence Issues** | Ensure the `./data/projects` folder has write permissions for the Docker user. |

@@ -68,43 +68,58 @@ def is_excluded_directory(dir_name: str) -> bool:
     return dir_name.lower() in excluded or dir_name.startswith('.')
 
 
-def discover_kicad_projects(repo_path: str) -> List[DiscoveredProject]:
+def discover_projects_from_repo(repo: Repo) -> List[DiscoveredProject]:
     """
-    Discover all KiCAD projects within a repository.
-    Excludes archive directories at any level.
+    Discover KiCAD projects by inspecting the Git tree directly (no-checkout).
+    Returns list of DiscoveredProject.
     """
-    projects = []
-    repo_path = Path(repo_path)
+    # Get all files in the repo recursively
+    try:
+        all_files = repo.git.ls_tree('-r', 'HEAD', '--name-only').splitlines()
+    except Exception:
+        # Fallback for empty repos or other issues
+        return []
     
-    # Find all .kicad_pro files recursively
-    for pro_file in repo_path.rglob("*.kicad_pro"):
-        project_dir = pro_file.parent
-        relative_path = project_dir.relative_to(repo_path).as_posix()
+    # Map directory -> list of filenames
+    dir_map = {}
+    for fpath in all_files:
+        p = Path(fpath)
+        # Handle relative path correctly (relative to repo root)
+        dir_path = p.parent.as_posix() # Use as_posix for consistency
+        filename = p.name
         
-        # Skip if any parent directory is excluded
+        if dir_path not in dir_map:
+            dir_map[dir_path] = []
+        dir_map[dir_path].append(filename)
+        
+    projects = []
+    for dir_path, filenames in dir_map.items():
+        # Skip if any part of the path is excluded
         should_exclude = False
-        for parent in project_dir.relative_to(repo_path).parents:
-            if is_excluded_directory(parent.name):
-                should_exclude = True
-                break
-        
+        parts = dir_path.split('/')
+        if dir_path != ".":
+            for part in parts:
+                if is_excluded_directory(part):
+                    should_exclude = True
+                    break
         if should_exclude:
             continue
-        
-        # Check for schematic and PCB files
-        sch_files = list(project_dir.glob("*.kicad_sch"))
-        pcb_files = list(project_dir.glob("*.kicad_pcb"))
-        
-        projects.append(DiscoveredProject(
-            name=pro_file.stem,
-            relative_path=relative_path if relative_path != "." else ".",
-            full_path=str(project_dir),
-            has_schematic=len(sch_files) > 0,
-            has_pcb=len(pcb_files) > 0
-        ))
-    
+            
+        pro_files = [f for f in filenames if f.endswith(".kicad_pro")]
+        for pro_file in pro_files:
+            has_sch = any(f.endswith(".kicad_sch") for f in filenames)
+            has_pcb = any(f.endswith(".kicad_pcb") for f in filenames)
+            
+            projects.append(DiscoveredProject(
+                name=Path(pro_file).stem,
+                relative_path=dir_path if dir_path != "." else ".",
+                full_path="", # No checkout path
+                has_schematic=has_sch,
+                has_pcb=has_pcb
+            ))
+            
     # Sort by path depth (shallow first) then by name
-    projects.sort(key=lambda p: (len(p.relative_path.split('/')), p.name.lower()))
+    projects.sort(key=lambda p: (0 if p.relative_path == "." else len(p.relative_path.split('/')), p.name.lower()))
     
     return projects
 
@@ -124,17 +139,21 @@ def analyze_repository(repo_url: str) -> AnalysisResult:
         # Shallow clone for analysis
         env = os.environ.copy()
         env['GIT_TERMINAL_PROMPT'] = '0'
+        # Trust On First Use (TOFU) for SSH
+        env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=accept-new'
         
-        Repo.clone_from(
+        repo = Repo.clone_from(
             repo_url,
             str(clone_path),
             depth=1,
             single_branch=True,
+            no_checkout=True,
+            filter='blob:none',
             env=env
         )
         
-        # Discover projects
-        projects = discover_kicad_projects(str(clone_path))
+        # Discover projects from tree
+        projects = discover_projects_from_repo(repo)
         
         # Determine import type
         # Type-1: Single .kicad_pro at root (relative_path == ".")
@@ -156,6 +175,80 @@ def analyze_repository(repo_url: str) -> AnalysisResult:
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         raise
+
+
+def _run_analyze_job(job_id: str, repo_url: str):
+    """
+    Background job: Analyze repository.
+    """
+    job = jobs[job_id]
+    
+    try:
+        job['logs'].append(f"Analyzing {repo_url}...")
+        
+        # We can reuse the logic from analyze_repository but we need to capture progress
+        # Since analyze_repository does a clone, we should ideally use that with progress
+        # For now, let's just wrap the synchronous call but ideally we'd refactor to share the clone logic
+        
+        repo_name = repo_url.rstrip('/').split('/')[-1].replace('.git', '')
+        temp_dir = tempfile.mkdtemp(prefix="kicad_analyze_")
+        clone_path = Path(temp_dir) / repo_name
+        
+        job['logs'].append("Cloning repository (blobless/no-checkout)...")
+        
+        env = os.environ.copy()
+        env['GIT_TERMINAL_PROMPT'] = '0'
+        env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=accept-new'
+        
+        repo = Repo.clone_from(
+            repo_url,
+            str(clone_path),
+            depth=1,
+            single_branch=True,
+            no_checkout=True,
+            filter='blob:none',
+            progress=CloneProgress(job_id),
+            env=env
+        )
+        
+        job['logs'].append("Discovering KiCAD projects from tree...")
+        projects = discover_projects_from_repo(repo)
+        
+        import_type = "type2"
+        if len(projects) == 1 and projects[0].relative_path == ".":
+            import_type = "type1"
+            
+        job['logs'].append(f"Found {len(projects)} project(s). Type: {import_type}")
+        
+        # Store result in job
+        job['result'] = {
+            "repo_name": repo_name,
+            "repo_url": repo_url,
+            "import_type": import_type,
+            "projects": [
+                {
+                    "name": p.name,
+                    "relative_path": p.relative_path,
+                    "has_schematic": p.has_schematic,
+                    "has_pcb": p.has_pcb
+                }
+                for p in projects
+            ],
+            # We don't pass temp_path here as we'll cleanup immediately or handled differently
+        }
+        
+        # Cleanup temp dir immediately since we have the metadata
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+        job['status'] = 'completed'
+        job['percent'] = 100
+        job['message'] = "Analysis complete."
+        
+    except Exception as e:
+        job['status'] = 'failed'
+        job['error'] = str(e)
+        job['logs'].append(f"Error: {str(e)}")
 
 
 def cleanup_analysis_temp(analysis: AnalysisResult):
@@ -251,6 +344,8 @@ def _run_import_job(job_id: str, repo_url: str, import_type: str,
         job['logs'].append(f"Cloning {repo_url}...")
         env = os.environ.copy()
         env['GIT_TERMINAL_PROMPT'] = '0'
+        # Trust On First Use (TOFU) for SSH
+        env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=accept-new'
         
         Repo.clone_from(
             repo_url,
@@ -381,6 +476,34 @@ def start_import_job(repo_url: str, import_type: str,
     return job_id
 
 
+def start_analyze_job(repo_url: str) -> str:
+    """
+    Start an asynchronous analysis job.
+    Returns job ID.
+    """
+    job_id = str(uuid.uuid4())
+    
+    jobs[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "message": "Starting analysis...",
+        "percent": 0,
+        "error": None,
+        "logs": [f"Starting analysis of {repo_url}"],
+        "type": "analyze",
+        "repo_url": repo_url
+    }
+    
+    thread = threading.Thread(
+        target=_run_analyze_job,
+        args=(job_id, repo_url)
+    )
+    thread.daemon = True
+    thread.start()
+    
+    return job_id
+
+
 def get_job_status(job_id: str) -> Optional[dict]:
     """Get the current status of an import job."""
     return jobs.get(job_id)
@@ -420,9 +543,11 @@ def sync_project(project_id: str) -> dict:
         # Fetch and pull
         env = os.environ.copy()
         env['GIT_TERMINAL_PROMPT'] = '0'
+        # Trust On First Use (TOFU) for SSH
+        env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=accept-new'
         
         fetch_info = origin.fetch(env=env)
-        origin.pull()
+        origin.pull(env=env)
         
         return {
             "status": "success",
