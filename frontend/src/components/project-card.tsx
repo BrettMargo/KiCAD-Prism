@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, Box, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import React from "react";
 
 interface ProjectCardProps {
     project: Project;
@@ -11,13 +12,35 @@ interface ProjectCardProps {
     onClick?: () => void;
     onDelete?: () => void;
     showDelete?: boolean;
+    searchQuery?: string;
 }
 
-export function ProjectCard({ project, compact, onClick, onDelete, showDelete }: ProjectCardProps) {
+// Highlight matched text in search results
+function highlightMatch(text: string, query: string): React.ReactNode {
+    if (!query || !query.trim()) return text;
+
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    const index = lowerText.indexOf(lowerQuery);
+
+    if (index === -1) return text;
+
+    return (
+        <>
+            {text.slice(0, index)}
+            <mark className="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded text-inherit">
+                {text.slice(index, index + query.length)}
+            </mark>
+            {text.slice(index + query.length)}
+        </>
+    );
+}
+
+export function ProjectCard({ project, compact, onClick, onDelete, showDelete, searchQuery = "" }: ProjectCardProps) {
     const navigate = useNavigate();
 
     const thumbnailUrl = project.thumbnail_url ? project.thumbnail_url : null;
-    
+
     // Helper function to get display name
     const getDisplayName = (project: Project) => {
         return project.display_name || project.name;
@@ -31,6 +54,10 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
         }
     };
 
+    const displayName = getDisplayName(project);
+    const description = project.description || "No description available.";
+    const parentRepo = project.parent_repo;
+
     if (compact) {
         return (
             <Card
@@ -40,13 +67,15 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
                 <div className="flex items-center gap-3 p-3">
                     <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
                         {thumbnailUrl ? (
-                            <img src={thumbnailUrl} alt={getDisplayName(project)} className="w-full h-full object-cover" />
+                            <img src={thumbnailUrl} alt={displayName} className="w-full h-full object-cover" />
                         ) : (
                             <Box className="h-6 w-6 opacity-20" />
                         )}
                     </div>
                     <div className="min-w-0">
-                        <h3 className="font-medium text-sm truncate">{getDisplayName(project)}</h3>
+                        <h3 className="font-medium text-sm truncate">
+                            {highlightMatch(displayName, searchQuery)}
+                        </h3>
                         <p className="text-xs text-muted-foreground">{project.last_modified}</p>
                     </div>
                 </div>
@@ -63,7 +92,7 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
                 {thumbnailUrl ? (
                     <img
                         src={thumbnailUrl}
-                        alt={getDisplayName(project)}
+                        alt={displayName}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                 ) : (
@@ -72,6 +101,11 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
                     </div>
                 )}
                 <div className="absolute top-2 right-2 flex gap-1">
+                    {parentRepo && (
+                        <Badge variant="secondary" className="backdrop-blur-sm bg-background/80 border text-[10px]">
+                            {highlightMatch(parentRepo, searchQuery)}
+                        </Badge>
+                    )}
                     <Badge variant="secondary" className="backdrop-blur-sm bg-background/80 border text-[10px]">
                         Git
                     </Badge>
@@ -93,10 +127,10 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete }:
 
             <CardContent className="p-4">
                 <h3 className="font-semibold text-lg tracking-tight mb-1 group-hover:text-primary transition-colors truncate">
-                    {getDisplayName(project)}
+                    {highlightMatch(displayName, searchQuery)}
                 </h3>
                 <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
-                    {project.description || "No description available."}
+                    {highlightMatch(description, searchQuery)}
                 </p>
             </CardContent>
 
