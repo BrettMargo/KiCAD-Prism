@@ -25,17 +25,16 @@ class Project(BaseModel):
 # In Docker, this should be a persistent volume mount.
 PROJECTS_ROOT = os.environ.get("KICAD_PROJECTS_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/projects")))
 
-# MONOREPOS_ROOT is where monorepos are cloned (shared across sub-projects)
-MONOREPOS_ROOT = os.path.join(PROJECTS_ROOT, "monorepos")
+# MONOREPOS_ROOT is where monorepos are cloned (Type-2 sub-projects)
+MONOREPOS_ROOT = os.path.join(PROJECTS_ROOT, "type2")
 
 # PROJECT_REGISTRY_FILE tracks all registered projects with metadata
 PROJECT_REGISTRY_FILE = os.path.join(PROJECTS_ROOT, ".project_registry.json")
 
-if not os.path.exists(PROJECTS_ROOT):
-    os.makedirs(PROJECTS_ROOT, exist_ok=True)
-
-if not os.path.exists(MONOREPOS_ROOT):
-    os.makedirs(MONOREPOS_ROOT, exist_ok=True)
+# Ensure directories exist
+os.makedirs(PROJECTS_ROOT, exist_ok=True)
+os.makedirs(MONOREPOS_ROOT, exist_ok=True)
+os.makedirs(os.path.join(PROJECTS_ROOT, "type1"), exist_ok=True)
 
 import json
 
@@ -88,29 +87,63 @@ def _normalize_path(path: str) -> str:
     Normalize project paths to work in both Docker and terminal environments.
     Converts between /app/projects and absolute local paths.
     """
-    # If path is already absolute and exists, return as-is
-    if os.path.isabs(path) and os.path.exists(path):
-        return path
+    # If path is already correct for current environment and exists, return as-is
+    if os.path.exists(path):
+        return os.path.abspath(path)
     
-    # Convert Docker path to local path
+    # Convert Docker path to local path (running on host, registry has docker paths)
     if path.startswith("/app/projects"):
         local_path = path.replace("/app/projects", PROJECTS_ROOT)
         if os.path.exists(local_path):
             return local_path
+            
+    # Convert Host path to Docker path (running in docker, registry has host paths)
+    # Strategy: locate 'data/projects/' or 'type1'/'type2' and append to current PROJECTS_ROOT
+    for marker in ["data/projects/", "type1/", "type2/", "monorepos/"]:
+        if marker in path:
+            parts = path.split(marker)
+            # Reconstruct using current PROJECTS_ROOT
+            # If marker is data/projects/, we just want the part after it
+            # If marker is type1/, we want type1/ + suffix
+            suffix = parts[-1]
+            if marker == "data/projects/":
+                remapped = os.path.join(PROJECTS_ROOT, suffix)
+            else:
+                remapped = os.path.join(PROJECTS_ROOT, marker.strip("/"), suffix)
+                
+            if os.path.exists(remapped):
+                return remapped
     
     # Convert relative path to absolute
     if not os.path.isabs(path):
-        abs_path = os.path.abspath(path)
+        abs_path = os.path.abspath(os.path.join(PROJECTS_ROOT, "..", "..", path))
+        if os.path.exists(abs_path):
+            return abs_path
+        
+        # Try relative to PROJECTS_ROOT
+        abs_path = os.path.abspath(os.path.join(PROJECTS_ROOT, path))
         if os.path.exists(abs_path):
             return abs_path
     
     # Return original path if no conversion worked
     return path
 
+# Cache for registered projects
+_projects_cache: List[Project] = []
+_projects_cache_time: float = 0
+PROJECTS_CACHE_TTL = 5.0 # seconds
+
 def get_registered_projects() -> List[Project]:
     """
     Get all registered projects from the registry.
+    Uses a short-term cache to avoid excessive I/O.
     """
+    global _projects_cache, _projects_cache_time
+    
+    current_time = time.time()
+    if _projects_cache and (current_time - _projects_cache_time) < PROJECTS_CACHE_TTL:
+        return _projects_cache
+        
     registry = _load_project_registry()
     projects = []
     for project_id, data in registry.items():
@@ -146,7 +179,55 @@ def get_registered_projects() -> List[Project]:
             parent_repo_path=_normalize_path(data.get("parent_repo_path")) if data.get("import_type") == "type2_subproject" else None
         ))
     
+    _projects_cache = projects
+    _projects_cache_time = current_time
     return projects
+
+
+def get_project_by_id(project_id: str) -> Optional[Project]:
+    """
+    Efficiently get a single project by its ID without scanning all projects if possible.
+    """
+    # Try cache first
+    global _projects_cache, _projects_cache_time
+    current_time = time.time()
+    if _projects_cache and (current_time - _projects_cache_time) < PROJECTS_CACHE_TTL:
+        project = next((p for p in _projects_cache if p.id == project_id), None)
+        if project:
+            return project
+
+    registry = _load_project_registry()
+    if project_id not in registry:
+        return None
+        
+    data = registry[project_id]
+    normalized_path = _normalize_path(data["path"])
+    
+    if not os.path.exists(normalized_path):
+        return None
+        
+    try:
+        mtime = os.path.getmtime(normalized_path)
+        last_modified = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+    except:
+        last_modified = data.get("last_modified", "Unknown")
+        
+    custom_display_name = path_config_service.get_project_display_name(normalized_path)
+    
+    return Project(
+        id=project_id,
+        name=data["name"],
+        display_name=custom_display_name,
+        description=data.get("description", f"Project {data['name']}"),
+        path=normalized_path,
+        last_modified=last_modified,
+        thumbnail_url=f"/api/projects/{project_id}/thumbnail",
+        sub_path=data.get("sub_path"),
+        parent_repo=data.get("parent_repo"),
+        repo_url=data.get("repo_url"),
+        import_type=data.get("import_type"),
+        parent_repo_path=_normalize_path(data.get("parent_repo_path")) if data.get("import_type") == "type2_subproject" else None
+    )
 
 import threading
 import uuid
@@ -353,11 +434,6 @@ def _run_workflow_job(job_id: str, project_id: str, workflow_type: str):
         if not pro_file:
             raise ValueError(".kicad_pro file not found in project root")
 
-        # Determine output ID
-        # IDs from user request:
-        # Design: 28dab1d3-7bf2-4d8a-9723-bcdd14e1d814
-        # Mfg: 9e5c254b-cb26-4a49-beea-fa7af8a62903
-        # Render: 81c80ad4-e8b9-4c9a-8bed-df7864fdefc6
         output_id = ""
         if workflow_type == "design":
             output_id = "28dab1d3-7bf2-4d8a-9723-bcdd14e1d814"
@@ -398,7 +474,6 @@ def _run_workflow_job(job_id: str, project_id: str, workflow_type: str):
             line = line.strip()
             if line:
                 job['logs'].append(line)
-                # Heuristic progress update could go here, but CLI doesn't always give percentage
         
         return_code = process.wait()
         

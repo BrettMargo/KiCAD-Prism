@@ -143,10 +143,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 try {
                     const baseUrl = `/api/projects/${projectId}`;
 
-                    // Adaptive delay based on project characteristics
-                    // Light projects need more time for DOM to stabilize
-                    const delay = 150; // Fixed delay for now, could be made adaptive based on project size
-
+                    const delay = 150;
                     await new Promise(resolve => setTimeout(resolve, delay));
 
                     const [schRes, subsheetsRes] = await Promise.allSettled([

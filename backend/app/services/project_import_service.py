@@ -200,10 +200,6 @@ def _run_analyze_job(job_id: str, repo_url: str):
     try:
         job['logs'].append(f"Analyzing {repo_url}...")
         
-        # We can reuse the logic from analyze_repository but we need to capture progress
-        # Since analyze_repository does a clone, we should ideally use that with progress
-        # For now, let's just wrap the synchronous call but ideally we'd refactor to share the clone logic
-        
         # Error out if HTTPS is used while SSH key is present
         if repo_url.startswith("https://") and has_ssh_key() and not os.environ.get('GITHUB_TOKEN'):
             error_msg = "HTTPS URL provided. Please use the SSH URL (git@github.com:...) for private repositories when an SSH key is configured."
@@ -535,8 +531,14 @@ def start_analyze_job(repo_url: str) -> str:
 
 
 def get_job_status(job_id: str) -> Optional[dict]:
-    """Get the current status of an import job."""
-    return jobs.get(job_id)
+    """Get the current status of an import or workflow job."""
+    # Check import jobs first
+    job = jobs.get(job_id)
+    if job:
+        return job
+    
+    # Then check workflow jobs from project_service
+    return project_service.jobs.get(job_id)
 
 
 def sync_project(project_id: str) -> dict:

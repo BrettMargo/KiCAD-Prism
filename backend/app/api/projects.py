@@ -268,8 +268,7 @@ async def get_project_thumbnail(project_id: str):
 @router.get("/{project_id}", response_model=project_service.Project)
 async def get_project_detail(project_id: str):
     """Get detailed project information."""
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
@@ -298,8 +297,7 @@ async def get_project_files(project_id: str, type: str = "design"):
     if type not in ["design", "manufacturing"]:
         raise HTTPException(status_code=400, detail="Type must be 'design' or 'manufacturing'")
     
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -319,8 +317,7 @@ async def download_file(project_id: str, path: str, type: str = "design", inline
     if type not in ["design", "manufacturing"]:
         raise HTTPException(status_code=400, detail="Type must be 'design' or 'manufacturing'")
     
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -356,8 +353,7 @@ async def get_project_readme(project_id: str, commit: str = None):
     If commit is provided, fetch from that commit; otherwise use working directory.
     For Type-2 projects, uses parent repo with relative path prefix.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -398,8 +394,7 @@ async def get_project_asset(project_id: str, asset_path: str):
     Serve assets (images, etc.) from project directory.
     Typically used for README image references.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -423,8 +418,7 @@ async def get_docs_files(project_id: str):
     """
     List all files in the documentation folder.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -443,8 +437,7 @@ async def get_doc_file_content(project_id: str, path: str, commit: str = None):
     If commit is provided, fetch from that commit; otherwise use working directory.
     For Type-2 projects, uses parent repo with relative path prefix.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -497,8 +490,7 @@ async def get_project_releases(project_id: str):
     Get list of Git releases/tags for a project.
     For Type-2 projects, uses parent repo with subproject file tracking.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -518,8 +510,7 @@ async def get_project_commits(project_id: str, limit: int = 50):
     Get list of commits for a project.
     For Type-2 projects, shows only commits affecting the subproject.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -536,8 +527,7 @@ async def get_project_commits(project_id: str, limit: int = 50):
 
 @router.get("/{project_id}/schematic")
 async def get_project_schematic(project_id: str):
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -564,8 +554,7 @@ async def get_project_subsheets(project_id: str):
 
 @router.get("/{project_id}/pcb")
 async def get_project_pcb(project_id: str):
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -576,8 +565,7 @@ async def get_project_pcb(project_id: str):
 
 @router.get("/{project_id}/3d-model")
 async def get_project_3d_model(project_id: str):
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -588,8 +576,7 @@ async def get_project_3d_model(project_id: str):
 
 @router.get("/{project_id}/ibom")
 async def get_project_ibom(project_id: str):
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -607,8 +594,7 @@ async def get_project_config(project_id: str):
     Get path configuration for a project.
     Returns the current path configuration (from .prism.json or auto-detected).
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -628,8 +614,7 @@ async def detect_project_paths(project_id: str):
     Run auto-detection on project paths.
     Returns detected paths without saving them.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -647,8 +632,7 @@ async def update_project_config(project_id: str, config: PathConfig):
     Update path configuration for a project.
     Saves configuration to .prism.json file.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -681,8 +665,7 @@ async def get_project_name(project_id: str):
     Get the display name for a project.
     Returns custom name from .prism.json or fallback name.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -697,8 +680,7 @@ async def update_project_name(project_id: str, request: ProjectNameRequest):
     """
     Update the display name for a project in .prism.json.
     """
-    projects = project_service.get_registered_projects()
-    project = next((p for p in projects if p.id == project_id), None)
+    project = project_service.get_project_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     

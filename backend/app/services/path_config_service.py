@@ -428,7 +428,7 @@ def get_project_display_name(project_path: str) -> Optional[str]:
     Returns:
         Custom project name from .prism.json or None if not set
     """
-    config = get_path_config(project_path, use_cache=False)  # Don't use cache to get fresh data
+    config = get_path_config(project_path)  # Use cache by default
     return config.project_name if config.project_name else None
 
 
