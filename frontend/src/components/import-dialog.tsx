@@ -38,6 +38,16 @@ interface JobStatus {
   logs?: string[];
 }
 
+interface CommentsSourceUrls {
+  project_id: string;
+  project_name: string;
+  base_url: string;
+  list_url: string;
+  patch_url_template: string;
+  reply_url_template: string;
+  delete_url_template: string;
+}
+
 interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,7 +60,12 @@ type ImportState =
   | { step: "analyzing"; url: string; jobId?: string; status?: JobStatus }
   | { step: "review"; url: string; analysis: AnalysisResult }
   | { step: "importing"; url: string; jobId: string; status: JobStatus }
-  | { step: "complete"; success: boolean; message: string };
+  | {
+      step: "complete";
+      success: boolean;
+      message: string;
+      commentsSourceUrls?: CommentsSourceUrls[];
+    };
 
 export function ImportDialog({
   open,
@@ -192,6 +207,22 @@ export function ImportDialog({
   };
 
   const pollJobStatus = async (jobId: string, repoUrl: string) => {
+    const fetchCommentsSourceUrls = async (projectIds: string[]): Promise<CommentsSourceUrls[]> => {
+      const entries = await Promise.all(
+        projectIds.map(async (id) => {
+          const response = await fetch(`/api/projects/${id}/comments/source-urls`);
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch KiCad URL helper for project ${id}`);
+          }
+
+          return response.json();
+        })
+      );
+
+      return entries;
+    };
+
     const poll = async () => {
       try {
         const res = await fetch(`/api/projects/jobs/${jobId}`);
@@ -202,10 +233,21 @@ export function ImportDialog({
         setState({ step: "importing", url: repoUrl, jobId, status });
 
         if (status.status === "completed") {
+          let commentsSourceUrls: CommentsSourceUrls[] | undefined = undefined;
+
+          if (status.project_ids && status.project_ids.length > 0) {
+            try {
+              commentsSourceUrls = await fetchCommentsSourceUrls(status.project_ids);
+            } catch (error) {
+              console.warn("Unable to load comments source URLs", error);
+            }
+          }
+
           setState({
             step: "complete",
             success: true,
             message: `Successfully imported ${status.project_ids?.length || 1} project(s)`,
+            commentsSourceUrls,
           });
           onImportComplete();
         } else if (status.status === "failed") {
@@ -213,6 +255,7 @@ export function ImportDialog({
             step: "complete",
             success: false,
             message: status.error || "Import failed",
+            commentsSourceUrls: undefined,
           });
         } else {
           // Continue polling
@@ -223,6 +266,7 @@ export function ImportDialog({
           step: "complete",
           success: false,
           message: error.message || "Failed to check import status",
+          commentsSourceUrls: undefined,
         });
       }
     };
@@ -473,6 +517,31 @@ export function ImportDialog({
                 </div>
               )}
             </div>
+
+            {state.success && state.commentsSourceUrls && state.commentsSourceUrls.length > 0 && (
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                <p className="text-sm font-medium">KiCad REST URL Helpers</p>
+                <p className="text-xs text-muted-foreground">
+                  Enter these values in KiCad Comments Source Settings for REST mode.
+                </p>
+                <div className="max-h-44 overflow-y-auto space-y-3">
+                  {state.commentsSourceUrls.map((entry) => (
+                    <div key={entry.project_id} className="rounded-md border bg-background p-3 space-y-2">
+                      <p className="text-xs font-medium">
+                        {entry.project_name} ({entry.project_id})
+                      </p>
+                      <div className="space-y-1 text-xs font-mono text-muted-foreground break-all">
+                        <p>List: {entry.list_url}</p>
+                        <p>Patch: {entry.patch_url_template}</p>
+                        <p>Reply: {entry.reply_url_template}</p>
+                        <p>Delete: {entry.delete_url_template}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end">
               <Button onClick={handleClose}>Close</Button>
             </div>

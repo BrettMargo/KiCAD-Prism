@@ -1,10 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as React from "react";
-import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare, GitBranch, CircuitBoard } from "lucide-react";
+import { Cpu, Box, FileText, MessageSquarePlus, MessageSquare, GitBranch, CircuitBoard, Link2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Model3DViewer } from "./model-3d-viewer";
 import { CommentOverlay } from "./comment-overlay";
 import { CommentForm } from "./comment-form";
@@ -36,6 +35,16 @@ interface VisualizerProps {
 
 type VisualizerTab = "sch" | "pcb" | "3d" | "ibom";
 
+interface CommentsSourceUrls {
+    project_id: string;
+    project_name: string;
+    base_url: string;
+    list_url: string;
+    patch_url_template: string;
+    reply_url_template: string;
+    delete_url_template: string;
+}
+
 export function Visualizer({ projectId, user }: VisualizerProps) {
     const [schematicViewerElement, setSchematicViewerElement] = useState<HTMLElement | null>(null);
     const [pcbViewerElement, setPcbViewerElement] = useState<HTMLElement | null>(null);
@@ -64,7 +73,6 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     const [loading, setLoading] = useState(true);
 
     const [comments, setComments] = useState<Comment[]>([]);
-    const [activeContext, setActiveContext] = useState<CommentContext>("PCB");
     const [activePage, setActivePage] = useState<string>("root.kicad_sch");
     const [commentMode, setCommentMode] = useState(false);
     const [showCommentForm, setShowCommentForm] = useState(false);
@@ -75,7 +83,35 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     const [isPushingComments, setIsPushingComments] = useState(false);
     const [pushMessage, setPushMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [showPushDialog, setShowPushDialog] = useState(false);
-    const [commitMessage, setCommitMessage] = useState("");
+    const [commentsSourceUrls, setCommentsSourceUrls] = useState<CommentsSourceUrls | null>(null);
+    const [isUrlsPopoverOpen, setIsUrlsPopoverOpen] = useState(false);
+    const [copiedField, setCopiedField] = useState<string | null>(null);
+    const activeCommentContext: CommentContext | null = activeTab === "sch" ? "SCH" : activeTab === "pcb" ? "PCB" : null;
+
+    const applyCommentModeToViewer = useCallback((viewer: HTMLElement | null, enabled: boolean) => {
+        if (!viewer) return;
+        const viewerAny = viewer as any;
+        if (viewerAny.setCommentMode) {
+            viewerAny.setCommentMode(enabled);
+            return;
+        }
+
+        if (enabled) {
+            viewer.setAttribute("comment-mode", "true");
+        } else {
+            viewer.removeAttribute("comment-mode");
+        }
+    }, []);
+
+    const copyToClipboard = async (label: string, value: string) => {
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopiedField(label);
+            setTimeout(() => setCopiedField(null), 1400);
+        } catch (error) {
+            console.warn("Failed to copy URL", error);
+        }
+    };
 
     // Initial Data Fetch
     useEffect(() => {
@@ -126,6 +162,17 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                     setComments(cData.comments || []);
                 }
 
+                try {
+                    const sourceResponse = await fetch(`/api/projects/${projectId}/comments/source-urls`);
+
+                    if (sourceResponse.ok) {
+                        const sourceData = await sourceResponse.json();
+                        setCommentsSourceUrls(sourceData);
+                    }
+                } catch (sourceError) {
+                    console.warn("Failed to load comments source URLs", sourceError);
+                }
+
             } catch (err) {
                 console.error("Error loading visualizer data", err);
             } finally {
@@ -155,7 +202,6 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                     if (schRes.status === "fulfilled" && schRes.value.ok) {
                         const schematicText = await schRes.value.text();
                         setSchematicContent(schematicText);
-                        setActiveContext("SCH");
                     } else {
                         console.error("Schematic not found");
                     }
@@ -196,7 +242,6 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                     if (pcbRes.ok) {
                         const pcbText = await pcbRes.text();
                         setPcbContent(pcbText);
-                        setActiveContext("PCB");
                     } else {
                         console.error("PCB not found");
                     }
@@ -225,20 +270,18 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         if (!schematicViewer && !pcbViewer) return;
 
         const handleCommentClick = (e: CustomEvent) => {
+            if (activeCommentContext !== "SCH" && activeCommentContext !== "PCB") {
+                return;
+            }
+
             const detail = e.detail;
             setPendingLocation({
                 x: detail.worldX,
                 y: detail.worldY,
                 layer: detail.layer || "F.Cu",
             });
-            setPendingContext(detail.context || activeContext);
+            setPendingContext(activeCommentContext);
             setShowCommentForm(true);
-        };
-
-        const handleTabActivate = (e: CustomEvent) => {
-            const kind = e.detail.current; // "PCB" | "SCH"
-            if (kind === "PCB") setActiveContext("PCB");
-            else if (kind === "SCH") setActiveContext("SCH");
         };
 
         const handleSheetLoad = (e: CustomEvent) => {
@@ -250,50 +293,53 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         // Add listeners to both viewers
         if (schematicViewer) {
             schematicViewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
-            schematicViewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
             schematicViewer.addEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
         }
 
         if (pcbViewer) {
             pcbViewer.addEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
-            pcbViewer.addEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
             pcbViewer.addEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
         }
 
         return () => {
             if (schematicViewer) {
                 schematicViewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
-                schematicViewer.removeEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
                 schematicViewer.removeEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
             }
             if (pcbViewer) {
                 pcbViewer.removeEventListener("ecad-viewer:comment:click", handleCommentClick as EventListener);
-                pcbViewer.removeEventListener("kicanvas:tab:activate", handleTabActivate as EventListener);
                 pcbViewer.removeEventListener("kicanvas:sheet:loaded", handleSheetLoad as EventListener);
             }
         };
-    }, [activeContext, schematicViewerElement, pcbViewerElement]);
+    }, [activeCommentContext, schematicViewerElement, pcbViewerElement]);
 
     // Toggle Comment Mode
     const toggleCommentMode = () => {
-        const newMode = !commentMode;
-        setCommentMode(newMode);
-
-        // Apply to both viewers
-        const schViewer = schematicViewerRef.current as any;
-        const pcbViewer = pcbViewerRef.current as any;
-
-        [schViewer, pcbViewer].forEach(viewer => {
-            if (viewer) {
-                if (viewer.setCommentMode) {
-                    viewer.setCommentMode(newMode);
-                } else {
-                    if (newMode) viewer.setAttribute("comment-mode", "true");
-                    else viewer.removeAttribute("comment-mode");
-                }
-            }
+        setCommentMode((previous) => {
+            const next = !previous;
+            applyCommentModeToViewer(schematicViewerRef.current, next);
+            applyCommentModeToViewer(pcbViewerRef.current, next);
+            return next;
         });
     };
+
+    useEffect(() => {
+        applyCommentModeToViewer(schematicViewerElement, commentMode);
+        applyCommentModeToViewer(pcbViewerElement, commentMode);
+    }, [commentMode, schematicViewerElement, pcbViewerElement, applyCommentModeToViewer]);
+
+    useEffect(() => {
+        if (!commentMode) return;
+
+        if (activeTab === "sch") {
+            applyCommentModeToViewer(schematicViewerRef.current, true);
+            return;
+        }
+
+        if (activeTab === "pcb") {
+            applyCommentModeToViewer(pcbViewerRef.current, true);
+        }
+    }, [activeTab, commentMode, applyCommentModeToViewer]);
 
     // Submit Comment
     const handleSubmitComment = async (content: string) => {
@@ -391,7 +437,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         }
     };
 
-    // Push Comments to Remote
+    // Export comments.json artifact from DB snapshot
     const handlePushComments = async () => {
         setIsPushingComments(true);
         setPushMessage(null);
@@ -400,23 +446,20 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
             const response = await fetch(`/api/projects/${projectId}/comments/push`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    author: user?.name || "anonymous",
-                    message: commitMessage || undefined
-                })
+                body: JSON.stringify({}),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                setPushMessage({ type: "success", text: data.message || "Comments pushed successfully!" });
+                const artifactPath = data.comments_path ? ` (${data.comments_path})` : "";
+                setPushMessage({ type: "success", text: `${data.message || "Generated comments artifact."}${artifactPath}` });
                 setShowPushDialog(false);
-                setCommitMessage("");
             } else {
-                setPushMessage({ type: "error", text: data.detail || "Failed to push comments." });
+                setPushMessage({ type: "error", text: data.detail || "Failed to generate comments artifact." });
             }
         } catch (err: any) {
-            setPushMessage({ type: "error", text: err.message || "Network error while pushing comments." });
+            setPushMessage({ type: "error", text: err.message || "Network error while generating comments artifact." });
         } finally {
             setIsPushingComments(false);
             // Clear message after 5 seconds
@@ -426,11 +469,13 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
 
     // Filtering comments for Overlay
     const overlayComments = comments.filter(c => {
+        if (!activeCommentContext) return false;
+
         // Must match context
-        if (c.context !== activeContext) return false;
+        if (c.context !== activeCommentContext) return false;
 
         // If SCH, match page
-        if (activeContext === "SCH") {
+        if (activeCommentContext === "SCH") {
             const norm = (p: string) => p ? p.split('/').pop() || p : "";
             const cPage = norm(c.location.page || "");
             const aPage = norm(activePage);
@@ -443,6 +488,10 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
         }
         return true;
     });
+
+    const shouldShowOverlay =
+        (activeTab === "sch" && Boolean(schematicContent && schematicViewerElement)) ||
+        (activeTab === "pcb" && Boolean(pcbContent && pcbViewerElement));
 
     // Tab Config
     const tabs: { id: VisualizerTab; label: string; icon: any }[] = [
@@ -478,6 +527,67 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 {/* Comment Controls */}
                 {(activeTab === "sch" || activeTab === "pcb") && (
                     <>
+                        <Popover open={isUrlsPopoverOpen} onOpenChange={setIsUrlsPopoverOpen}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-8"
+                                    aria-label="Show KiCad comments REST URLs"
+                                >
+                                    <Link2 className="w-3 h-3 mr-2" />
+                                    REST URLs
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" side="bottom" className="w-[520px] max-w-[calc(100vw-2rem)] p-3">
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-sm font-medium">KiCad Comments REST URLs</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Copy these into KiCad Comments Source Settings.
+                                        </p>
+                                    </div>
+                                    {commentsSourceUrls ? (
+                                        <div className="space-y-2">
+                                            {[
+                                                { label: "List URL", value: commentsSourceUrls.list_url },
+                                                { label: "Patch URL Template", value: commentsSourceUrls.patch_url_template },
+                                                { label: "Reply URL Template", value: commentsSourceUrls.reply_url_template },
+                                                { label: "Delete URL Template", value: commentsSourceUrls.delete_url_template },
+                                            ].map((entry) => (
+                                                <div key={entry.label} className="rounded border bg-muted/30 p-2">
+                                                    <div className="mb-1 text-[11px] font-medium text-muted-foreground">{entry.label}</div>
+                                                    <div className="flex items-start gap-2">
+                                                        <code className="flex-1 break-all rounded bg-background px-2 py-1 text-[11px]">{entry.value}</code>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-7 shrink-0"
+                                                            onClick={() => copyToClipboard(entry.label, entry.value)}
+                                                        >
+                                                            {copiedField === entry.label ? (
+                                                                <>
+                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                    Copied
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Copy className="h-3 w-3 mr-1" />
+                                                                    Copy
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">Loading URL helpers...</p>
+                                    )}
+                                </div>
+                            </PopoverContent>
+                        </Popover>
                         <Button
                             variant={commentMode ? "default" : "ghost"}
                             size="sm"
@@ -503,12 +613,11 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                             variant="ghost"
                             size="sm"
                             onClick={() => setShowPushDialog(true)}
-                            disabled={comments.length === 0}
                             className="text-xs h-8 ml-1"
-                            title="Commit and push comments to remote"
+                            title="Generate comments.json artifact from DB"
                         >
                             <GitBranch className="w-3 h-3 mr-2" />
-                            Push Comments
+                            Generate JSON
                         </Button>
                     </>
                 )}
@@ -530,36 +639,21 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 </div>
             )}
 
-            {/* Push Comments Dialog */}
+            {/* Generate comments.json Dialog */}
             <Dialog open={showPushDialog} onOpenChange={setShowPushDialog}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Push Comments</DialogTitle>
+                        <DialogTitle>Generate Comments Artifact</DialogTitle>
                         <DialogDescription>
-                            Commit and push your design review comments to the remote repository.
+                            This writes the latest DB comments to `.comments/comments.json`. Push to remote is handled by your Git workflow.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="commit-message" className="text-right">
-                                Message
-                            </Label>
-                            <Input
-                                id="commit-message"
-                                value={commitMessage}
-                                onChange={(e) => setCommitMessage(e.target.value)}
-                                placeholder="Updated design review comments"
-                                className="col-span-3"
-                                disabled={isPushingComments}
-                            />
-                        </div>
-                    </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowPushDialog(false)} disabled={isPushingComments}>
                             Cancel
                         </Button>
                         <Button onClick={handlePushComments} disabled={isPushingComments}>
-                            {isPushingComments ? "Pushing..." : "Push"}
+                            {isPushingComments ? "Generating..." : "Generate"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -615,7 +709,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
                 </div>
 
                 {/* Comment Overlay - only visible on sch/pcb tabs */}
-                {(activeTab === "sch" || activeTab === "pcb") && (schematicContent || pcbContent) ? (
+                {shouldShowOverlay ? (
                     <CommentOverlay
                         comments={overlayComments}
                         viewerRef={activeTab === "sch" ? schematicViewerRef : pcbViewerRef}

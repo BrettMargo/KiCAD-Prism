@@ -6,6 +6,7 @@ from app.api.comments import router as comments_router
 from app.api.diff import router as diff_router
 from app.api.settings import router as settings_router
 from app.services.git_service import router as git_router
+from app.services.comments_store_service import initialize_comments_store
 from app.core.config import settings
 import subprocess
 import os
@@ -94,6 +95,7 @@ async def lifespan(app: FastAPI):
     # Startup
     configure_git()
     ensure_ssh_dir()
+    initialize_comments_store()
     yield
 
 app = FastAPI(title="KiCAD Prism API", lifespan=lifespan)

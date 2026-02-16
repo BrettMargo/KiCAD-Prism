@@ -119,8 +119,7 @@ export function CommentOverlay({
     return (
         <TooltipProvider>
             <div
-                className="absolute inset-0 pointer-events-none overflow-hidden"
-                style={{ zIndex: 100 }}
+                className="absolute inset-0 z-20 pointer-events-none overflow-hidden"
             >
                 {visibleComments.map((comment) => {
                     const position = pinPositions.get(comment.id);
