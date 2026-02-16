@@ -56,6 +56,15 @@ class Settings(BaseSettings):
         default="",
         description="GitHub Personal Access Token for private repository access."
     )
+
+    COMMENTS_API_BASE_URL: str = Field(
+        default="",
+        description=(
+            "Default base URL used to generate KiCad comments REST URLs "
+            "for project import and visualizer helpers. "
+            "If empty, URL helpers derive host from the incoming request."
+        ),
+    )
     
     # ===========================================
     # Computed Properties

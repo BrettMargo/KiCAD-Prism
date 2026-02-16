@@ -1,10 +1,11 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from app.services import project_service, file_service, path_config_service
 from app.services.git_service import (get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit, get_releases_filtered, get_commits_list_filtered, get_file_from_commit_with_prefix)
 from app.services.path_config_service import PathConfig
+from app.services.comments_url_service import build_comments_source_urls, resolve_comments_base_url
 
 router = APIRouter()
 
@@ -272,6 +273,37 @@ async def get_project_detail(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+@router.get("/{project_id}/comments/source-urls")
+async def get_project_comments_source_urls(
+    request: Request,
+    project_id: str,
+    base_url: Optional[str] = Query(
+        default=None,
+        description="Optional override base URL (e.g. http://localhost:8000).",
+    ),
+):
+    """
+    Get helper URLs to configure KiCad comments REST source for this project.
+    """
+    project = project_service.get_project_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    resolved_base_url = resolve_comments_base_url(request, explicit_base_url=base_url)
+    urls = build_comments_source_urls(project.id, resolved_base_url)
+
+    return {
+        "project_id": project.id,
+        "project_name": project.display_name or project.name,
+        "base_url": urls["base_url"],
+        "list_url": urls["absolute"]["list_url"],
+        "patch_url_template": urls["absolute"]["patch_url_template"],
+        "reply_url_template": urls["absolute"]["reply_url_template"],
+        "delete_url_template": urls["absolute"]["delete_url_template"],
+        "relative": urls["relative"],
+    }
 
 @router.delete("/{project_id}")
 async def delete_project_endpoint(project_id: str):
