@@ -1,6 +1,15 @@
 # Common
 .DS_Store
 .vscode/
+.claude/
+.prism.local.json
+
+# Local / Temp Files
+**/*.local.*
+**/Thumbs.db
+**/.directory
+*.bak
+*.tmp
 
 # Environment Files
 .env
