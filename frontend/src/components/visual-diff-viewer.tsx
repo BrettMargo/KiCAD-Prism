@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Loader2, AlertCircle, Eye, ZoomIn, ZoomOut, RotateCcw, CircuitBoard, Cpu, ClipboardList } from "lucide-react";
+import { X, Loader2, AlertCircle, Eye, ZoomIn, ZoomOut, RotateCcw, CircuitBoard, Cpu, ClipboardList, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
@@ -52,6 +52,7 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
     const [selectedSheet, setSelectedSheet] = useState<string>("");
     const [selectedLayer, setSelectedLayer] = useState<string>("");
     const [opacity, setOpacity] = useState([50]); // 0-100, 50 = mix
+    const [hideZones, setHideZones] = useState(false);
 
     // BoM Filtering
     const [filters, setFilters] = useState({
@@ -116,7 +117,10 @@ setManifest(mData);
 
 // Set defaults
 if (mData.sheets.length > 0) setSelectedSheet(mData.sheets[0]);
-if (mData.layers.length > 0) setSelectedLayer(mData.layers[0]);
+if (mData.layers.length > 0) {
+    const preferred = mData.layers.find(l => l === "F.Cu") ?? mData.layers[0];
+    setSelectedLayer(preferred);
+}
 if (!mData.schematic && mData.pcb) setViewMode("pcb");
 }
 }
@@ -144,14 +148,15 @@ logsEndRef.current.scrollIntoView({ behavior: "smooth" });
 
 
 // Asset URLs
-const getAssetUrl = (commit: string, type: "sch" | "pcb", item: string) => {
+const getAssetUrl = (commit: string, type: "sch" | "pcb", item: string, forceNormal?: boolean) => {
 if (!jobId) return "";
 // item is filename for sch, layer name for pcb
 let filename = item;
+const assetType = type === "pcb" && hideZones && !forceNormal ? "pcb_nozones" : type;
 if (type === "pcb") {
 filename = item.replace(/\./g, "_") + ".svg";
 }
-return `/api/projects/${projectId}/diff/${jobId}/assets/${commit}/${type}/${encodeURIComponent(filename)}`;
+return `/api/projects/${projectId}/diff/${jobId}/assets/${commit}/${assetType}/${encodeURIComponent(filename)}`;
 };
 
 const renderViewer = () => {
@@ -173,7 +178,7 @@ return (
 <Button
 variant={filters.added ? "secondary" : "outline"}
 size="sm"
-className={`flex items-center gap-1.5 h-8 ${filters.added ? "bg-green-500/10 border-green-500 text-green-700" : ""}`}
+className={`flex items-center gap-1.5 h-8 ${filters.added ? "bg-green-500/10 border-green-500 text-green-700 dark:text-green-400" : ""}`}
 onClick={() => setFilters(f => ({ ...f, added: !f.added }))}
 >
 <div className={`w-2 h-2 rounded-full ${filters.added ? "bg-green-500" : "bg-muted-foreground"}`} /> Added ({bom.summary.added})
@@ -181,7 +186,7 @@ onClick={() => setFilters(f => ({ ...f, added: !f.added }))}
 <Button
 variant={filters.removed ? "secondary" : "outline"}
 size="sm"
-className={`flex items-center gap-1.5 h-8 ${filters.removed ? "bg-red-500/10 border-red-500 text-red-700" : ""}`}
+className={`flex items-center gap-1.5 h-8 ${filters.removed ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-400" : ""}`}
 onClick={() => setFilters(f => ({ ...f, removed: !f.removed }))}
 >
 <div className={`w-2 h-2 rounded-full ${filters.removed ? "bg-red-500" : "bg-muted-foreground"}`} /> Removed ({bom.summary.removed})
@@ -189,7 +194,7 @@ onClick={() => setFilters(f => ({ ...f, removed: !f.removed }))}
 <Button
 variant={filters.changed ? "secondary" : "outline"}
 size="sm"
-className={`flex items-center gap-1.5 h-8 ${filters.changed ? "bg-orange-500/10 border-orange-500 text-orange-700" : ""}`}
+className={`flex items-center gap-1.5 h-8 ${filters.changed ? "bg-orange-500/10 border-orange-500 text-orange-700 dark:text-orange-400" : ""}`}
 onClick={() => setFilters(f => ({ ...f, changed: !f.changed }))}
 >
 <div className={`w-2 h-2 rounded-full ${filters.changed ? "bg-orange-500" : "bg-muted-foreground"}`} /> Changed ({bom.summary.changed})
@@ -212,8 +217,8 @@ const isRemoved = item.status === "removed";
 const isChanged = item.status === "changed";
 
 let rowClass = "border-b ";
-if (isAdded) rowClass += "bg-green-500/10 text-green-900";
-if (isRemoved) rowClass += "bg-red-500/10 text-red-900 italic line-through opacity-70";
+if (isAdded) rowClass += "bg-green-500/10 text-green-900 dark:text-green-300";
+if (isRemoved) rowClass += "bg-red-500/10 text-red-900 dark:text-red-300 italic line-through opacity-70";
 if (isChanged) rowClass += "bg-orange-500/5";
 
 return (
@@ -230,10 +235,10 @@ if (isChanged && fieldDiff) {
 return (
 <td key={f} className="px-4 py-2 border-r bg-orange-500/5">
 <div className="flex flex-col gap-1">
-<div className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] line-through w-fit">
+<div className="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 text-[10px] line-through w-fit">
 {fieldDiff.old}
 </div>
-<div className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-xs font-medium w-fit">
+<div className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400 text-xs font-medium w-fit">
 {fieldDiff.new}
 </div>
 </div>
@@ -299,20 +304,32 @@ centerOnInit
 </div>
 
 <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
-<div className="relative shadow-2xl border bg-white" style={{ minWidth: "1200px", minHeight: "800px" }}>
+<div className="relative shadow-2xl border bg-white dark:bg-zinc-950" style={{ minWidth: "1200px", minHeight: "800px" }}>
 {/* Old Commit (Bottom) */}
 <img
 src={oldImg}
 className="absolute inset-0 w-full h-full object-contain pointer-events-none"
 alt="Old Version"
+onError={(e) => {
+    if (hideZones) {
+        const fallback = getAssetUrl(commit2, isSch ? "sch" : "pcb", currentItem, true);
+        if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+    }
+}}
 />
 
 {/* New Commit (Top) - Opacity controlled */}
 <img
 src={newImg}
-className="absolute inset-0 w-full h-full object-contain bg-white transition-opacity duration-150 pointer-events-none"
+className="absolute inset-0 w-full h-full object-contain bg-white dark:bg-zinc-950 transition-opacity duration-150 pointer-events-none"
 style={{ opacity: opacity[0] / 100 }}
 alt="New Version"
+onError={(e) => {
+    if (hideZones) {
+        const fallback = getAssetUrl(commit1, isSch ? "sch" : "pcb", currentItem, true);
+        if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+    }
+}}
 />
 </div>
 </TransformComponent>
@@ -330,9 +347,9 @@ return (
 <div className="flex items-center gap-4">
 <h2 className="text-lg font-semibold">Visual Diff</h2>
 <div className="text-sm text-muted-foreground flex gap-2">
-<span className="bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200">{commit2.slice(0, 7)} (Old)</span>
+<span className="bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 px-2 py-0.5 rounded border border-red-200 dark:border-red-800">{commit2.slice(0, 7)} (Old)</span>
 <span>vs</span>
-<span className="bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200">{commit1.slice(0, 7)} (New)</span>
+<span className="bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400 px-2 py-0.5 rounded border border-green-200 dark:border-green-800">{commit1.slice(0, 7)} (New)</span>
 </div>
 </div>
 <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
@@ -411,10 +428,23 @@ className="flex-1"
 <span className="text-xs font-semibold w-8 text-green-600">New</span>
 </div>
 )}
+
+{viewMode === "pcb" && (
+<Button
+variant={hideZones ? "secondary" : "outline"}
+size="sm"
+className="flex items-center gap-1.5 h-8"
+onClick={() => setHideZones(h => !h)}
+title="Toggle copper pour visibility"
+>
+<Layers className="h-4 w-4" />
+{hideZones ? "Pours Hidden" : "Hide Pours"}
+</Button>
+)}
 </div>
 
 {/* Canvas */}
-<div className="flex-1 bg-zinc-100 overflow-hidden relative">
+<div className="flex-1 bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
 {renderViewer()}
 </div>
 </div>

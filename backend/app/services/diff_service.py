@@ -176,6 +176,28 @@ def _get_pcb_layers(pcb_path: Path) -> List[str]:
     return ["F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "F.Mask", "B.Mask", "Edge.Cuts"]
     
 
+def _strip_zones(pcb_content: str) -> str:
+    """Remove all (zone ...) blocks from PCB file content."""
+    result = []
+    i = 0
+    length = len(pcb_content)
+    while i < length:
+        if pcb_content[i:i+5] == '(zone' and (i+5 >= length or pcb_content[i+5] in (' ', '\n', '\r', '\t', '(')):
+            # Skip entire balanced (zone ...) block
+            depth = 1
+            i += 1
+            while i < length and depth > 0:
+                if pcb_content[i] == '(':
+                    depth += 1
+                elif pcb_content[i] == ')':
+                    depth -= 1
+                i += 1
+            continue
+        result.append(pcb_content[i])
+        i += 1
+    return ''.join(result)
+
+
 def _colorize_svg(svg_path: Path, color: str):
     """
     Replaces black lines/fills in the SVG with the specified color.
@@ -354,6 +376,59 @@ def _run_diff_generation(job_id: str, project_id: str, commit1: str, commit2: st
                 else:
                     job['logs'].append(f"PCB Export FAILED (Code {res.returncode})")
                     job['logs'].append(f"STDERR: {res.stderr}")
+
+                # 3b. Export PCB without zones (copper pours)
+                pcb_nz_dir = directory / "pcb_nozones"
+                pcb_nz_dir.mkdir(exist_ok=True)
+                job['logs'].append(f"Exporting PCB (no zones) for {commit}...")
+
+                try:
+                    stripped_pcb = pcb_file.parent / (pcb_file.stem + "_nozones.kicad_pcb")
+                    original_content = pcb_file.read_text(encoding="utf-8", errors="ignore")
+                    stripped_content = _strip_zones(original_content)
+                    stripped_pcb.write_text(stripped_content, encoding="utf-8")
+
+                    nz_cmd = [
+                        CLI_CMD, "pcb", "export", "svg",
+                        "--mode-multi",
+                        "--layers", ",".join(all_layers),
+                        "--black-and-white",
+                        "--exclude-drawing-sheet",
+                        "--page-size-mode", "2",
+                        "--output", str(pcb_nz_dir),
+                        str(stripped_pcb)
+                    ]
+                    nz_res = subprocess.run(nz_cmd, capture_output=True, text=True)
+                    stripped_pcb.unlink(missing_ok=True)
+
+                    if nz_res.returncode == 0:
+                        for svg in list(pcb_nz_dir.glob("*.svg")):
+                            leaf = svg.name
+                            layer_part = leaf
+                            # Strip the project name prefix (uses _nozones stem)
+                            nz_stem = pcb_file.stem + "_nozones-"
+                            if leaf.startswith(nz_stem):
+                                layer_part = leaf[len(nz_stem):]
+                            elif leaf.startswith(pcb_file.stem + "-"):
+                                layer_part = leaf[len(pcb_file.stem)+1:]
+
+                            matched_layer = None
+                            for l in all_layers:
+                                if l.replace(".", "_") == layer_part.replace(".svg", ""):
+                                    matched_layer = l
+                                    break
+
+                            if matched_layer:
+                                target_svg = pcb_nz_dir / (matched_layer.replace(".", "_") + ".svg")
+                                if svg.resolve() != target_svg.resolve():
+                                    if target_svg.exists(): target_svg.unlink()
+                                    svg.rename(target_svg)
+                                _colorize_svg(target_svg, color)
+                    else:
+                        job['logs'].append(f"PCB (no zones) export failed: {nz_res.stderr}")
+                except Exception as e:
+                    job['logs'].append(f"PCB (no zones) export error: {e}")
+
             else:
                 job['logs'].append(f"No .kicad_pcb found for {commit}")
 
