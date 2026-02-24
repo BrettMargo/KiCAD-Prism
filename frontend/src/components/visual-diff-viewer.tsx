@@ -3,6 +3,8 @@ import { X, Loader2, AlertCircle, Eye, ZoomIn, ZoomOut, RotateCcw, CircuitBoard,
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 interface VisualDiffViewerProps {

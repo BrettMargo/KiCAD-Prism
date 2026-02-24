@@ -568,37 +568,24 @@ def get_project_thumbnail_path(project_id: str) -> Optional[str]:
     projects = get_registered_projects()
     project = next((p for p in projects if p.id == project_id), None)
     if not project:
-        print(f"[DEBUG] Project {project_id} not found")
         return None
-    
-    # Use path config service to get thumbnail path
+
+    # 1. Try .prism.json configured path
     config = path_config_service.get_path_config(project.path)
     resolved = path_config_service.resolve_paths(project.path, config)
     thumbnail_path = resolved.thumbnail_dir
-    
-    print(f"[DEBUG] Project: {project.path}")
-    print(f"[DEBUG] Config thumbnail: {config.thumbnail}")
-    print(f"[DEBUG] Resolved thumbnail_dir: {thumbnail_path}")
-    
-    if not thumbnail_path or not os.path.exists(thumbnail_path):
-        print(f"[DEBUG] Thumbnail path does not exist or is None")
-        return None
-    
-    # If thumbnail path points to a specific file, return it directly
-    if os.path.isfile(thumbnail_path):
-        print(f"[DEBUG] Returning specific file: {thumbnail_path}")
-        return thumbnail_path
-    
-    # If it's a directory, find first image file
-    if os.path.isdir(thumbnail_path):
-        for file in os.listdir(thumbnail_path):
-            if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                result = os.path.join(thumbnail_path, file)
-                print(f"[DEBUG] Returning file from directory: {result}")
-                return result
-    
-    print(f"[DEBUG] No valid thumbnail found")
-    return None
+
+    if thumbnail_path and os.path.exists(thumbnail_path):
+        if os.path.isfile(thumbnail_path):
+            return thumbnail_path
+        if os.path.isdir(thumbnail_path):
+            for file in os.listdir(thumbnail_path):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.svg')):
+                    return os.path.join(thumbnail_path, file)
+
+    # 2. Fall back to auto-generated thumbnail
+    from app.services import thumbnail_service
+    return thumbnail_service.get_generated_thumbnail(project_id)
 
 def find_schematic_file(project_path: str) -> Optional[str]:
     """Find the main .kicad_sch file using path config."""

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Dict
 from dataclasses import dataclass
 from git import Repo, RemoteProgress
-from app.services import project_service, path_config_service
+from app.services import project_service, path_config_service, thumbnail_service
 
 
 @dataclass
@@ -457,6 +457,17 @@ def _run_import_job(job_id: str, repo_url: str, import_type: str,
         job['percent'] = 100
         job['message'] = f"Imported {len(imported_ids)} project(s)"
         job['logs'].append("Import completed successfully.")
+
+        # Generate thumbnails for imported projects
+        for pid in imported_ids:
+            try:
+                result = thumbnail_service.generate_thumbnail(pid)
+                if result:
+                    job['logs'].append(f"Generated thumbnail for {pid}")
+                else:
+                    job['logs'].append(f"No thumbnail generated for {pid} (no PCB/schematic found)")
+            except Exception as e:
+                job['logs'].append(f"Thumbnail generation failed for {pid}: {e}")
         
     except Exception as e:
         job['status'] = 'failed'

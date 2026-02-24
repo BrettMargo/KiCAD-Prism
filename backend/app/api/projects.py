@@ -2,7 +2,7 @@ import os
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from typing import List, Optional
-from app.services import project_service, file_service, path_config_service
+from app.services import project_service, file_service, path_config_service, thumbnail_service
 from app.services.git_service import (get_releases, get_commits_list, get_file_from_commit, file_exists_in_commit, get_releases_filtered, get_commits_list_filtered, get_file_from_commit_with_prefix)
 from app.services.path_config_service import PathConfig
 from app.services.comments_url_service import build_comments_source_urls, resolve_comments_base_url
@@ -265,6 +265,17 @@ async def get_project_thumbnail(project_id: str):
     if not path:
         raise HTTPException(status_code=404, detail="Thumbnail not found")
     return FileResponse(path)
+
+@router.post("/{project_id}/generate-thumbnail")
+async def generate_thumbnail(project_id: str):
+    """On-demand thumbnail regeneration."""
+    project = project_service.get_project_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    result = thumbnail_service.generate_thumbnail(project_id)
+    if not result:
+        raise HTTPException(status_code=500, detail="Thumbnail generation failed")
+    return {"status": "ok", "path": result}
 
 @router.get("/{project_id}", response_model=project_service.Project)
 async def get_project_detail(project_id: str):

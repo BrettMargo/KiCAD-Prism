@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, Box, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import React from "react";
+import React, { useState } from "react";
 
 interface ProjectCardProps {
     project: Project;
@@ -40,6 +40,7 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete, s
     const navigate = useNavigate();
 
     const thumbnailUrl = project.thumbnail_url ? project.thumbnail_url : null;
+    const [thumbnailError, setThumbnailError] = useState(false);
 
     // Helper function to get display name
     const getDisplayName = (project: Project) => {
@@ -66,8 +67,8 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete, s
             >
                 <div className="flex items-center gap-3 p-3">
                     <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                        {thumbnailUrl ? (
-                            <img src={thumbnailUrl} alt={displayName} className="w-full h-full object-cover" />
+                        {thumbnailUrl && !thumbnailError ? (
+                            <img src={thumbnailUrl} alt={displayName} className="w-full h-full object-cover" onError={() => setThumbnailError(true)} />
                         ) : (
                             <Box className="h-6 w-6 opacity-20" />
                         )}
@@ -89,11 +90,12 @@ export function ProjectCard({ project, compact, onClick, onDelete, showDelete, s
             onClick={handleClick}
         >
             <div className="aspect-video w-full overflow-hidden bg-muted relative border-b">
-                {thumbnailUrl ? (
+                {thumbnailUrl && !thumbnailError ? (
                     <img
                         src={thumbnailUrl}
                         alt={displayName}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={() => setThumbnailError(true)}
                     />
                 ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground bg-muted/30">
