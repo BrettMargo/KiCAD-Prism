@@ -506,7 +506,7 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
     return (
         <div className="flex flex-col h-full bg-background relative selection-none">
             {/* Toolbar */}
-            <div className="flex items-center gap-1 border-b px-2 py-1 bg-muted/20">
+            <div className="flex items-center gap-1 border-b px-2 py-1 bg-muted/30">
                 {tabs.map(tab => {
                     const Icon = tab.icon;
                     return (
@@ -660,52 +660,56 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
             </Dialog>
 
             {/* Content Area */}
-            <div className="flex-1 relative overflow-hidden">
+            <div className="flex-1 relative overflow-hidden bg-zinc-100 dark:bg-zinc-900">
                 {/* Schematic View - always mounted but conditionally visible */}
-                <div className={`absolute inset-0 z-10 transition-opacity duration-200 ${activeTab === "sch" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
-                    {schematicContentLoaded ? (
-                        schematicContent ? (
-                            <ecad-viewer
-                                ref={setSchematicViewerRef}
-                                style={{ width: '100%', height: '100%' }}
-                                key={`schematic-viewer-${projectId}`}
-                            >
-                                <EcadBlob filename="root.kicad_sch" content={schematicContent} />
-                                {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
-                            </ecad-viewer>
+                <div className={`absolute inset-0 z-10 transition-opacity duration-200 p-4 ${activeTab === "sch" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+                    <div className="w-full h-full shadow-2xl border bg-white dark:bg-zinc-950 rounded-sm overflow-hidden">
+                        {schematicContentLoaded ? (
+                            schematicContent ? (
+                                <ecad-viewer
+                                    ref={setSchematicViewerRef}
+                                    style={{ width: '100%', height: '100%' }}
+                                    key={`schematic-viewer-${projectId}`}
+                                >
+                                    <EcadBlob filename="root.kicad_sch" content={schematicContent} />
+                                    {subsheets.map(s => <EcadBlob key={s.filename} filename={s.filename} content={s.content} />)}
+                                </ecad-viewer>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    <p>No schematic files found.</p>
+                                </div>
+                            )
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <p>No schematic files found.</p>
+                                <p>Loading schematic...</p>
                             </div>
-                        )
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                            <p>Loading schematic...</p>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
                 {/* PCB View - always mounted but conditionally visible */}
-                <div className={`absolute inset-0 z-10 transition-opacity duration-200 ${activeTab === "pcb" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
-                    {pcbContentLoaded ? (
-                        pcbContent ? (
-                            <ecad-viewer
-                                ref={setPcbViewerRef}
-                                style={{ width: '100%', height: '100%' }}
-                                key={`pcb-viewer-${projectId}`}
-                            >
-                                <EcadBlob filename="board.kicad_pcb" content={pcbContent} />
-                            </ecad-viewer>
+                <div className={`absolute inset-0 z-10 transition-opacity duration-200 p-4 ${activeTab === "pcb" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+                    <div className="w-full h-full shadow-2xl border bg-white dark:bg-zinc-950 rounded-sm overflow-hidden text-zinc-900">
+                        {pcbContentLoaded ? (
+                            pcbContent ? (
+                                <ecad-viewer
+                                    ref={setPcbViewerRef}
+                                    style={{ width: '100%', height: '100%' }}
+                                    key={`pcb-viewer-${projectId}`}
+                                >
+                                    <EcadBlob filename="board.kicad_pcb" content={pcbContent} />
+                                </ecad-viewer>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                    <p>No PCB files found.</p>
+                                </div>
+                            )
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <p>No PCB files found.</p>
+                                <p>Loading PCB...</p>
                             </div>
-                        )
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                            <p>Loading PCB...</p>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
 
                 {/* Comment Overlay - only visible on sch/pcb tabs */}
@@ -721,15 +725,19 @@ export function Visualizer({ projectId, user }: VisualizerProps) {
 
                 {/* 3D View */}
                 {activeTab === "3d" && (
-                    <div className="absolute inset-0 z-20 bg-background">
-                        {modelUrl ? <Model3DViewer modelUrl={modelUrl} /> : <div className="p-10">No 3D Model</div>}
+                    <div className="absolute inset-0 z-20 flex p-4">
+                        <div className="w-full h-full shadow-2xl border bg-white dark:bg-zinc-950 rounded-sm overflow-hidden">
+                            {modelUrl ? <Model3DViewer modelUrl={modelUrl} /> : <div className="p-10 text-muted-foreground">No 3D Model</div>}
+                        </div>
                     </div>
                 )}
 
                 {/* iBoM View */}
                 {activeTab === "ibom" && (
-                    <div className="absolute inset-0 z-20 bg-white">
-                        {ibomUrl ? <iframe src={ibomUrl} className="w-full h-full border-0" /> : <div className="p-10">No iBoM Found</div>}
+                    <div className="absolute inset-0 z-20 flex p-4">
+                        <div className="w-full h-full shadow-2xl border bg-white dark:bg-zinc-950 rounded-sm overflow-hidden">
+                            {ibomUrl ? <iframe src={ibomUrl} className="w-full h-full border-0" /> : <div className="p-10 text-muted-foreground">No iBoM Found</div>}
+                        </div>
                     </div>
                 )}
 
