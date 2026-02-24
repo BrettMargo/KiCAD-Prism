@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Loader2, AlertCircle, Eye, ZoomIn, ZoomOut, RotateCcw, CircuitBoard, Cpu, ClipboardList } from "lucide-react";
+import { X, Loader2, AlertCircle, Eye, ZoomIn, ZoomOut, RotateCcw, CircuitBoard, Cpu, ClipboardList, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 interface VisualDiffViewerProps {
@@ -50,8 +52,28 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
     // View State
     const [viewMode, setViewMode] = useState<"schematic" | "pcb" | "bom">("schematic");
     const [selectedSheet, setSelectedSheet] = useState<string>("");
-    const [selectedLayer, setSelectedLayer] = useState<string>("");
+    const [enabledLayers, setEnabledLayers] = useState<Set<string>>(new Set());
     const [opacity, setOpacity] = useState([50]); // 0-100, 50 = mix
+    const [hideZones, setHideZones] = useState(false);
+
+    const toggleLayer = (layer: string) => {
+        const next = new Set(enabledLayers);
+        if (next.has(layer)) {
+            next.delete(layer);
+        } else {
+            next.add(layer);
+        }
+        setEnabledLayers(next);
+    };
+
+    const toggleAll = () => {
+        if (!manifest) return;
+        setEnabledLayers(new Set(manifest.layers));
+    };
+
+    const toggleNone = () => {
+        setEnabledLayers(new Set());
+    };
 
     // BoM Filtering
     const [filters, setFilters] = useState({
@@ -116,7 +138,13 @@ setManifest(mData);
 
 // Set defaults
 if (mData.sheets.length > 0) setSelectedSheet(mData.sheets[0]);
-if (mData.layers.length > 0) setSelectedLayer(mData.layers[0]);
+if (mData.layers.length > 0) {
+    const defaults = new Set<string>();
+    if (mData.layers.includes("F.Cu")) defaults.add("F.Cu");
+    if (mData.layers.includes("Edge.Cuts")) defaults.add("Edge.Cuts");
+    if (defaults.size === 0) defaults.add(mData.layers[0]);
+    setEnabledLayers(defaults);
+}
 if (!mData.schematic && mData.pcb) setViewMode("pcb");
 }
 }
@@ -144,14 +172,15 @@ logsEndRef.current.scrollIntoView({ behavior: "smooth" });
 
 
 // Asset URLs
-const getAssetUrl = (commit: string, type: "sch" | "pcb", item: string) => {
+const getAssetUrl = (commit: string, type: "sch" | "pcb", item: string, forceNormal?: boolean) => {
 if (!jobId) return "";
 // item is filename for sch, layer name for pcb
 let filename = item;
+const assetType = type === "pcb" && hideZones && !forceNormal ? "pcb_nozones" : type;
 if (type === "pcb") {
 filename = item.replace(/\./g, "_") + ".svg";
 }
-return `/api/projects/${projectId}/diff/${jobId}/assets/${commit}/${type}/${encodeURIComponent(filename)}`;
+return `/api/projects/${projectId}/diff/${jobId}/assets/${commit}/${assetType}/${encodeURIComponent(filename)}`;
 };
 
 const renderViewer = () => {
@@ -173,7 +202,7 @@ return (
 <Button
 variant={filters.added ? "secondary" : "outline"}
 size="sm"
-className={`flex items-center gap-1.5 h-8 ${filters.added ? "bg-green-500/10 border-green-500 text-green-700" : ""}`}
+className={`flex items-center gap-1.5 h-8 ${filters.added ? "bg-green-500/10 border-green-500 text-green-700 dark:text-green-400" : ""}`}
 onClick={() => setFilters(f => ({ ...f, added: !f.added }))}
 >
 <div className={`w-2 h-2 rounded-full ${filters.added ? "bg-green-500" : "bg-muted-foreground"}`} /> Added ({bom.summary.added})
@@ -181,7 +210,7 @@ onClick={() => setFilters(f => ({ ...f, added: !f.added }))}
 <Button
 variant={filters.removed ? "secondary" : "outline"}
 size="sm"
-className={`flex items-center gap-1.5 h-8 ${filters.removed ? "bg-red-500/10 border-red-500 text-red-700" : ""}`}
+className={`flex items-center gap-1.5 h-8 ${filters.removed ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-400" : ""}`}
 onClick={() => setFilters(f => ({ ...f, removed: !f.removed }))}
 >
 <div className={`w-2 h-2 rounded-full ${filters.removed ? "bg-red-500" : "bg-muted-foreground"}`} /> Removed ({bom.summary.removed})
@@ -189,7 +218,7 @@ onClick={() => setFilters(f => ({ ...f, removed: !f.removed }))}
 <Button
 variant={filters.changed ? "secondary" : "outline"}
 size="sm"
-className={`flex items-center gap-1.5 h-8 ${filters.changed ? "bg-orange-500/10 border-orange-500 text-orange-700" : ""}`}
+className={`flex items-center gap-1.5 h-8 ${filters.changed ? "bg-orange-500/10 border-orange-500 text-orange-700 dark:text-orange-400" : ""}`}
 onClick={() => setFilters(f => ({ ...f, changed: !f.changed }))}
 >
 <div className={`w-2 h-2 rounded-full ${filters.changed ? "bg-orange-500" : "bg-muted-foreground"}`} /> Changed ({bom.summary.changed})
@@ -212,8 +241,8 @@ const isRemoved = item.status === "removed";
 const isChanged = item.status === "changed";
 
 let rowClass = "border-b ";
-if (isAdded) rowClass += "bg-green-500/10 text-green-900";
-if (isRemoved) rowClass += "bg-red-500/10 text-red-900 italic line-through opacity-70";
+if (isAdded) rowClass += "bg-green-500/10 text-green-900 dark:text-green-300";
+if (isRemoved) rowClass += "bg-red-500/10 text-red-900 dark:text-red-300 italic line-through opacity-70";
 if (isChanged) rowClass += "bg-orange-500/5";
 
 return (
@@ -230,10 +259,10 @@ if (isChanged && fieldDiff) {
 return (
 <td key={f} className="px-4 py-2 border-r bg-orange-500/5">
 <div className="flex flex-col gap-1">
-<div className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] line-through w-fit">
+<div className="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 text-[10px] line-through w-fit">
 {fieldDiff.old}
 </div>
-<div className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-xs font-medium w-fit">
+<div className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400 text-xs font-medium w-fit">
 {fieldDiff.new}
 </div>
 </div>
@@ -268,13 +297,21 @@ No entries match the selected filters
 }
 
 const isSch = viewMode === "schematic";
-const currentItem = isSch ? selectedSheet : selectedLayer;
 
-if (!currentItem) return <div className="flex items-center justify-center h-full text-muted-foreground">No assets found</div>;
+// Determine what layers/sheets to render
+const itemsToRender = isSch 
+    ? (selectedSheet ? [selectedSheet] : []) 
+    : manifest.layers.filter(l => enabledLayers.has(l));
 
-
-const oldImg = getAssetUrl(commit2, isSch ? "sch" : "pcb", currentItem);
-const newImg = getAssetUrl(commit1, isSch ? "sch" : "pcb", currentItem);
+if (itemsToRender.length === 0) {
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-muted-foreground animate-in fade-in duration-500">
+            <Layers className="h-12 w-12 mb-4 opacity-20" />
+            <p className="text-lg font-medium">{isSch ? "No sheet selected" : "No layers enabled"}</p>
+            <p className="text-sm opacity-60">Select {isSch ? "a sheet" : "layers"} from the toolbar to begin comparing.</p>
+        </div>
+    );
+}
 
 return (
 <TransformWrapper
@@ -299,21 +336,41 @@ centerOnInit
 </div>
 
 <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
-<div className="relative shadow-2xl border bg-white" style={{ minWidth: "1200px", minHeight: "800px" }}>
-{/* Old Commit (Bottom) */}
-<img
-src={oldImg}
-className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-alt="Old Version"
-/>
+<div className="relative shadow-2xl border bg-white dark:bg-zinc-950" style={{ minWidth: "1200px", minHeight: "800px" }}>
+    {itemsToRender.map((item, idx) => (
+        <div key={item} className="absolute inset-0">
+            {/* Old Commit (Bottom) */}
+            <img
+            src={getAssetUrl(commit2, isSch ? "sch" : "pcb", item)}
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            alt={`Old ${item}`}
+            style={{ zIndex: idx * 2 }}
+            onError={(e) => {
+                if (!isSch && hideZones) {
+                    const fallback = getAssetUrl(commit2, "pcb", item, true);
+                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                }
+            }}
+            />
 
-{/* New Commit (Top) - Opacity controlled */}
-<img
-src={newImg}
-className="absolute inset-0 w-full h-full object-contain bg-white transition-opacity duration-150 pointer-events-none"
-style={{ opacity: opacity[0] / 100 }}
-alt="New Version"
-/>
+            {/* New Commit (Top) - Opacity controlled */}
+            <img
+            src={getAssetUrl(commit1, isSch ? "sch" : "pcb", item)}
+            className="absolute inset-0 w-full h-full object-contain transition-opacity duration-150 pointer-events-none"
+            style={{ 
+                opacity: opacity[0] / 100,
+                zIndex: idx * 2 + 1
+            }}
+            alt={`New ${item}`}
+            onError={(e) => {
+                if (!isSch && hideZones) {
+                    const fallback = getAssetUrl(commit1, "pcb", item, true);
+                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                }
+            }}
+            />
+        </div>
+    ))}
 </div>
 </TransformComponent>
 </>
@@ -330,9 +387,9 @@ return (
 <div className="flex items-center gap-4">
 <h2 className="text-lg font-semibold">Visual Diff</h2>
 <div className="text-sm text-muted-foreground flex gap-2">
-<span className="bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200">{commit2.slice(0, 7)} (Old)</span>
+<span className="bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 px-2 py-0.5 rounded border border-red-200 dark:border-red-800">{commit2.slice(0, 7)} (Old)</span>
 <span>vs</span>
-<span className="bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200">{commit1.slice(0, 7)} (New)</span>
+<span className="bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400 px-2 py-0.5 rounded border border-green-200 dark:border-green-800">{commit1.slice(0, 7)} (New)</span>
 </div>
 </div>
 <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
@@ -383,14 +440,46 @@ disabled={!manifest.bom}
 </SelectContent>
 </Select>
 ) : viewMode === "pcb" ? (
-<Select value={selectedLayer} onValueChange={setSelectedLayer}>
-<SelectTrigger className="h-8">
-<SelectValue placeholder="Select Layer" />
-</SelectTrigger>
-<SelectContent>
-{manifest.layers.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-</SelectContent>
-</Select>
+<Popover>
+    <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 w-full justify-between gap-2 px-3 font-normal">
+            <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <span>{enabledLayers.size} Layers</span>
+            </div>
+            <div className="h-4 w-px bg-border mx-1" />
+            <span className="text-xs text-muted-foreground">Select Visibility</span>
+        </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-64 p-2 shadow-xl" align="start">
+        <div className="flex items-center justify-between mb-2 pb-2 border-b">
+            <span className="text-xs font-semibold px-2">Layer Visibility</span>
+            <div className="flex gap-1">
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={toggleAll}>All</Button>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={toggleNone}>None</Button>
+            </div>
+        </div>
+        <div className="max-h-[400px] overflow-y-auto flex flex-col gap-0.5 pr-1 py-1 custom-scrollbar">
+            {manifest.layers.map(layer => (
+                <div 
+                    key={layer} 
+                    className="flex items-center gap-2.5 px-2 py-1.5 hover:bg-accent hover:text-accent-foreground rounded-md cursor-pointer transition-colors group"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        toggleLayer(layer);
+                    }}
+                >
+                    <Checkbox 
+                        checked={enabledLayers.has(layer)} 
+                        onCheckedChange={() => toggleLayer(layer)}
+                        className="pointer-events-none"
+                    />
+                    <span className="text-sm font-medium leading-none group-hover:translate-x-0.5 transition-transform">{layer}</span>
+                </div>
+            ))}
+        </div>
+    </PopoverContent>
+</Popover>
 ) : null}
 </div>
 
@@ -411,10 +500,23 @@ className="flex-1"
 <span className="text-xs font-semibold w-8 text-green-600">New</span>
 </div>
 )}
+
+{viewMode === "pcb" && (
+<Button
+variant={hideZones ? "secondary" : "outline"}
+size="sm"
+className="flex items-center gap-1.5 h-8"
+onClick={() => setHideZones(h => !h)}
+title="Toggle copper pour visibility"
+>
+<Layers className="h-4 w-4" />
+{hideZones ? "Pours Hidden" : "Hide Pours"}
+</Button>
+)}
 </div>
 
 {/* Canvas */}
-<div className="flex-1 bg-zinc-100 overflow-hidden relative">
+<div className="flex-1 bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
 {renderViewer()}
 </div>
 </div>
