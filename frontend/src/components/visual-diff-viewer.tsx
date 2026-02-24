@@ -52,9 +52,28 @@ export function VisualDiffViewer({ projectId, commit1, commit2, onClose }: Visua
     // View State
     const [viewMode, setViewMode] = useState<"schematic" | "pcb" | "bom">("schematic");
     const [selectedSheet, setSelectedSheet] = useState<string>("");
-    const [selectedLayer, setSelectedLayer] = useState<string>("");
+    const [enabledLayers, setEnabledLayers] = useState<Set<string>>(new Set());
     const [opacity, setOpacity] = useState([50]); // 0-100, 50 = mix
     const [hideZones, setHideZones] = useState(false);
+
+    const toggleLayer = (layer: string) => {
+        const next = new Set(enabledLayers);
+        if (next.has(layer)) {
+            next.delete(layer);
+        } else {
+            next.add(layer);
+        }
+        setEnabledLayers(next);
+    };
+
+    const toggleAll = () => {
+        if (!manifest) return;
+        setEnabledLayers(new Set(manifest.layers));
+    };
+
+    const toggleNone = () => {
+        setEnabledLayers(new Set());
+    };
 
     // BoM Filtering
     const [filters, setFilters] = useState({
@@ -120,8 +139,11 @@ setManifest(mData);
 // Set defaults
 if (mData.sheets.length > 0) setSelectedSheet(mData.sheets[0]);
 if (mData.layers.length > 0) {
-    const preferred = mData.layers.find(l => l === "F.Cu") ?? mData.layers[0];
-    setSelectedLayer(preferred);
+    const defaults = new Set<string>();
+    if (mData.layers.includes("F.Cu")) defaults.add("F.Cu");
+    if (mData.layers.includes("Edge.Cuts")) defaults.add("Edge.Cuts");
+    if (defaults.size === 0) defaults.add(mData.layers[0]);
+    setEnabledLayers(defaults);
 }
 if (!mData.schematic && mData.pcb) setViewMode("pcb");
 }
@@ -275,13 +297,21 @@ No entries match the selected filters
 }
 
 const isSch = viewMode === "schematic";
-const currentItem = isSch ? selectedSheet : selectedLayer;
 
-if (!currentItem) return <div className="flex items-center justify-center h-full text-muted-foreground">No assets found</div>;
+// Determine what layers/sheets to render
+const itemsToRender = isSch 
+    ? (selectedSheet ? [selectedSheet] : []) 
+    : manifest.layers.filter(l => enabledLayers.has(l));
 
-
-const oldImg = getAssetUrl(commit2, isSch ? "sch" : "pcb", currentItem);
-const newImg = getAssetUrl(commit1, isSch ? "sch" : "pcb", currentItem);
+if (itemsToRender.length === 0) {
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-muted-foreground animate-in fade-in duration-500">
+            <Layers className="h-12 w-12 mb-4 opacity-20" />
+            <p className="text-lg font-medium">{isSch ? "No sheet selected" : "No layers enabled"}</p>
+            <p className="text-sm opacity-60">Select {isSch ? "a sheet" : "layers"} from the toolbar to begin comparing.</p>
+        </div>
+    );
+}
 
 return (
 <TransformWrapper
@@ -307,32 +337,40 @@ centerOnInit
 
 <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
 <div className="relative shadow-2xl border bg-white dark:bg-zinc-950" style={{ minWidth: "1200px", minHeight: "800px" }}>
-{/* Old Commit (Bottom) */}
-<img
-src={oldImg}
-className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-alt="Old Version"
-onError={(e) => {
-    if (hideZones) {
-        const fallback = getAssetUrl(commit2, isSch ? "sch" : "pcb", currentItem, true);
-        if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
-    }
-}}
-/>
+    {itemsToRender.map((item, idx) => (
+        <div key={item} className="absolute inset-0">
+            {/* Old Commit (Bottom) */}
+            <img
+            src={getAssetUrl(commit2, isSch ? "sch" : "pcb", item)}
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            alt={`Old ${item}`}
+            style={{ zIndex: idx * 2 }}
+            onError={(e) => {
+                if (!isSch && hideZones) {
+                    const fallback = getAssetUrl(commit2, "pcb", item, true);
+                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                }
+            }}
+            />
 
-{/* New Commit (Top) - Opacity controlled */}
-<img
-src={newImg}
-className="absolute inset-0 w-full h-full object-contain bg-white dark:bg-zinc-950 transition-opacity duration-150 pointer-events-none"
-style={{ opacity: opacity[0] / 100 }}
-alt="New Version"
-onError={(e) => {
-    if (hideZones) {
-        const fallback = getAssetUrl(commit1, isSch ? "sch" : "pcb", currentItem, true);
-        if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
-    }
-}}
-/>
+            {/* New Commit (Top) - Opacity controlled */}
+            <img
+            src={getAssetUrl(commit1, isSch ? "sch" : "pcb", item)}
+            className="absolute inset-0 w-full h-full object-contain transition-opacity duration-150 pointer-events-none"
+            style={{ 
+                opacity: opacity[0] / 100,
+                zIndex: idx * 2 + 1
+            }}
+            alt={`New ${item}`}
+            onError={(e) => {
+                if (!isSch && hideZones) {
+                    const fallback = getAssetUrl(commit1, "pcb", item, true);
+                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback;
+                }
+            }}
+            />
+        </div>
+    ))}
 </div>
 </TransformComponent>
 </>
@@ -402,14 +440,46 @@ disabled={!manifest.bom}
 </SelectContent>
 </Select>
 ) : viewMode === "pcb" ? (
-<Select value={selectedLayer} onValueChange={setSelectedLayer}>
-<SelectTrigger className="h-8">
-<SelectValue placeholder="Select Layer" />
-</SelectTrigger>
-<SelectContent>
-{manifest.layers.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-</SelectContent>
-</Select>
+<Popover>
+    <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 w-full justify-between gap-2 px-3 font-normal">
+            <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <span>{enabledLayers.size} Layers</span>
+            </div>
+            <div className="h-4 w-px bg-border mx-1" />
+            <span className="text-xs text-muted-foreground">Select Visibility</span>
+        </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-64 p-2 shadow-xl" align="start">
+        <div className="flex items-center justify-between mb-2 pb-2 border-b">
+            <span className="text-xs font-semibold px-2">Layer Visibility</span>
+            <div className="flex gap-1">
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={toggleAll}>All</Button>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={toggleNone}>None</Button>
+            </div>
+        </div>
+        <div className="max-h-[400px] overflow-y-auto flex flex-col gap-0.5 pr-1 py-1 custom-scrollbar">
+            {manifest.layers.map(layer => (
+                <div 
+                    key={layer} 
+                    className="flex items-center gap-2.5 px-2 py-1.5 hover:bg-accent hover:text-accent-foreground rounded-md cursor-pointer transition-colors group"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        toggleLayer(layer);
+                    }}
+                >
+                    <Checkbox 
+                        checked={enabledLayers.has(layer)} 
+                        onCheckedChange={() => toggleLayer(layer)}
+                        className="pointer-events-none"
+                    />
+                    <span className="text-sm font-medium leading-none group-hover:translate-x-0.5 transition-transform">{layer}</span>
+                </div>
+            ))}
+        </div>
+    </PopoverContent>
+</Popover>
 ) : null}
 </div>
 
